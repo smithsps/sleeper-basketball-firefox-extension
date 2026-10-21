@@ -1,6 +1,7 @@
 # Sleeper Basketball Chrome Extension
 
-Chrome extension (MV3) that fills Sleeper's empty NBA Team and Matchup tabs (`sleeper.com/leagues/<id>/team` and `/matchup`) with the layouts from the mobile app.
+Chrome and Firefox extension (MV3) that fills Sleeper's empty NBA Team, Matchup and Scores tabs (`sleeper.com/leagues/<id>/team`, `/matchup` and `/scores`) with the layouts from the mobile app.
+It also adds score previews for NBA leagues in Sleeper's sidebar and a player card.
 It also turns on waiver bids and free-agent adds, which Sleeper's website blocks for NBA.
 It also logs every API call it makes, with status, timing, size and a JSON preview, to support probing the API.
 
@@ -26,6 +27,11 @@ It only mounts for NBA leagues.
 Pick your team in the dropdown once; the choice is remembered per league.
 If the page has no empty Team tab to fill, it shows as a floating panel instead.
 To update, `git pull`, hit the reload icon on the extension card, and refresh the Sleeper tab.
+
+For Firefox, run `npm run build:firefox` and load `dist/firefox` from `about:debugging`, or `npm run sign` for a Mozilla-signed build (unlisted, credentials in `.env`).
+`npm run package` zips both builds into `dist/packages`.
+
+Projections follow Lock-In rules: a locked game's score replaces that player's default (final game of the week) projection.
 
 See [docs/DETAILS.md](docs/DETAILS.md) for features, the API calls it makes, and tests.
 

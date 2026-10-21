@@ -24,6 +24,7 @@ These are ported from Sleeper's web app and match its help article:
 - Taxi is a roster setting, not a weekly one, so it's edited from the current week.
 
 The projection follows Lock-In rules: an unlocked player scores their final game of the week, so that game's projection is the default.
+Once a player is locked, the score of the locked game replaces that default in the team projection (Sleeper's own `proj_points` is adjusted the same way).
 
 ### Matchup
 
