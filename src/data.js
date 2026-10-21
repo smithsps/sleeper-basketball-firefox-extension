@@ -113,6 +113,8 @@
       days: model.weekDays(games),
       gamesByTeam: model.gamesByTeam(games),
       games: games.map((g) => ({ start: g.start_time, status: g.status })),
+      scores: games,
+      statRows: stats || [],
       proj: model.pointsByGame(projections || [], scoringSettings, scoring.scoreStats),
       actual: model.pointsByGame(stats || [], scoringSettings, scoring.scoreStats),
       research: research || {},

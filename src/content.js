@@ -12,6 +12,8 @@
   const FLOAT_AFTER_MS = 4000;
   const NOTICE_MS = 3000;
   const CLOCK_MS = 60e3;
+  // The Scores tab refetches the week this often while one of its games is live.
+  const LIVE_MS = 30e3;
   // Career seasons fetched for the player card (one request each).
   const CAREER_SEASONS = 10;
   const CARD_SEASON_TABS = 6;
@@ -82,6 +84,7 @@
       today: new Date().toLocaleDateString('en-CA'),
       openCalls: new Set(),
       me: null, // logged-in user id, when the page has a session
+      gameId: null, // game open on the Scores tab; null picks one (a live game, else the latest)
       swap: null, // lineup spot picked to swap, e.g. 's:2' or 'b:<player id>'
       saving: false,
       notice: null, // { kind: 'error' | 'ok', text }
@@ -596,6 +599,7 @@
 
     function setWeek(week) {
       state.week = week;
+      state.gameId = null;
       state.swap = null;
       state.lockConfirm = null;
       state.notice = null;
@@ -606,6 +610,11 @@
       const tab = e.target.closest('[data-tab]');
       if (tab) {
         state.tab = tab.dataset.tab;
+        return schedule();
+      }
+      const game = e.target.closest('[data-game]');
+      if (game) {
+        state.gameId = game.dataset.game;
         return schedule();
       }
       const spot = e.target.closest('[data-spot]');
@@ -735,6 +744,25 @@
     // Lock windows and game states move with the clock.
     const clock = setInterval(schedule, CLOCK_MS);
 
+    // Live scores: the Scores tab keeps the shown week current while a game is on.
+    let refreshing = false;
+    async function refreshLive() {
+      const week = state.weeks[state.week];
+      if (refreshing || !state.ready || !state.onPanel || state.page !== 'scores' || !week?.games.some((g) => g.status === 'in_game')) return;
+      refreshing = true;
+      try {
+        const fresh = await loader.loadWeek({ league: state.league, leagueId, rosters: state.rosters, week: state.week });
+        // The panel-only parts (research, ranks) don't change with the games.
+        if (state.weeks[state.week] === week) Object.assign(week, fresh, { research: week.research, ranks: week.ranks });
+        schedule();
+      } catch (err) {
+        console.warn('[sleeper-nba-panel] live refresh failed', err);
+      } finally {
+        refreshing = false;
+      }
+    }
+    const live = setInterval(refreshLive, LIVE_MS);
+
     // Same league, other tab (Team <-> Matchup): keep the data, swap the view.
     function show(next) {
       const onPanel = PANEL_PAGES.has(next);
@@ -749,6 +777,7 @@
 
     function teardown() {
       clearInterval(clock);
+      clearInterval(live);
       document.removeEventListener('keydown', onKey);
       document.removeEventListener('snp:player-action', onPlayerAction);
       document.removeEventListener('snp:player-card', onPlayerCard);

@@ -514,19 +514,27 @@ test('matchup: switching to Team keeps the session and data', async () => {
   assert.equal(await page.locator(panel('[data-tab="api"] .count')).textContent(), calls, 'no refetch');
 });
 
-test('scores: fills the Scores tab with every matchup of the week', async () => {
+test('scores: fills the Scores tab like a Game Center, with a box score per game', async () => {
   documentBody = LOGGED_OUT;
   await page.goto(`https://sleeper.com/leagues/${LEAGUE}/scores`);
-  await page.locator(panel('.sc-card')).first().waitFor({ timeout: 30000 });
+  await page.locator(panel('.gc-game[data-game]')).nth(1).waitFor({ timeout: 30000 });
   assert.equal(await page.locator('.empty-panel-container').isVisible(), false);
   assert.match(await page.locator(panel('[data-tab="page"]')).textContent(), /Scores/);
-  const users = await (await fetch(`https://api.sleeper.app/v1/league/${LEAGUE}/users`)).json();
-  const cards = await page.locator(panel('.sc-card')).count();
-  assert.ok(cards >= 2, 'one card per matchup');
-  assert.equal(await page.locator(panel('.sc-team')).count(), cards * 2);
-  assert.match(await page.locator(panel('.sc-card')).first().innerText(), /\d+% win/);
-  assert.ok(users.length >= cards * 2 - 1);
+  assert.match(await shadowText('.section-head h3'), /Game Center/);
+  const games = await page.locator(panel('.gc-game:not(.leaders)')).count();
+  assert.ok(games >= 2, 'the week\'s games are listed');
+  assert.equal(await page.locator(panel('.gc-game.selected')).count(), 1, 'one game is open');
+  assert.ok(await page.locator(panel('.gc-header .gc-score, .gc-header .gc-abbr')).count(), 'team header');
   await page.screenshot({ path: `${OUT}scores.png` });
+
+  // Another game opens on click, and the leaders list ranks fantasy scorers.
+  const other = page.locator(panel('.gc-game:not(.leaders):not(.selected)')).first();
+  const id = await other.getAttribute('data-game');
+  await other.click();
+  await page.locator(panel(`.gc-game.selected[data-game="${id}"]`)).waitFor();
+  await page.locator(panel('.gc-game.leaders')).click();
+  await page.locator(panel('.gc-game.leaders.selected')).waitFor();
+  await page.screenshot({ path: `${OUT}scores-leaders.png` });
 });
 
 test('matchup: locks in a finished game for your starter', async () => {

@@ -38,8 +38,15 @@ Rank comes from `roster_standings`; before any games are played, it falls back t
 
 ### Scores
 
-- Fills the Scores tab with every matchup of the week: both teams stacked, with record, win probability, yet-to-play count, projection and points, and the leader's points highlighted.
-- Uses the same data as the Matchup tab, so it adds no requests. Week arrows work as on the other tabs.
+Fills the Scores tab like Sleeper's Game Center.
+
+- The week's games down the left, by day: status (FINAL, OT, HALF, a running clock, or the tip-off time), both teams and their scores.
+- The selected game opens with team scores, records, the quarter-by-quarter line, and a box score per team: minutes, points, rebounds, assists, steals, blocks, turnovers, then fantasy points (your league's scoring), projection and who owns the player here.
+- Before tip-off the box shows each team's projected top scorers.
+- `WEEK LEADERS` ranks the week's top fantasy scorers with their stat lines.
+- A game that is live opens by default, otherwise the latest finished one. Clicking a player opens the player card.
+- While a game is live and the tab is open, the week is refetched every 30 seconds.
+- Uses the same schedule and stat requests as the other tabs, so it adds none until a game is live.
 
 ### Sidebar
 
