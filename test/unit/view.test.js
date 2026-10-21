@@ -124,7 +124,7 @@ test('logged-in leg data wins: starters, projection and locked games', () => {
   s.weeks = { 1: { ...week, legs: [{ roster_id: 1, starters: ['b', 'a', '0'], proj_points: 157.23, points: 4, starters_games: { a: 'g1' } }] } };
   const html = render(s, []);
   const out = text(html);
-  assert.match(out, /4\.00 proj 157\.23/);
+  assert.match(out, /4\.00 proj 117\.40/);
   assert.match(out, /PG Jeremiah Fears .* G Luka Doncic/);
   assert.match(html, /class="day game locked"/);
   assert.match(out, /lock 30\.79/);

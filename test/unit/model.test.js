@@ -120,6 +120,18 @@ test('lock-in: a locked game counts and is final; otherwise the last game counts
     'nothing to lock before the first game ends');
 });
 
+test('projection: a locked score replaces that starter\'s default projection', () => {
+  const locked = [
+    day('g1', '2026-10-21', 'complete', '2026-10-21T23:00:00Z', { actual: 50, proj: 30 }),
+    day('g2', '2026-10-23', 'pre_game', '2026-10-23T23:00:00Z', { proj: 40 }),
+  ];
+  const open = [day('g3', '2026-10-24', 'pre_game', '2026-10-24T23:00:00Z', { proj: 25 })];
+  const starters = [{ days: locked, lock: 'g1' }, { days: open }];
+  assert.equal(model.projectedTotal(null, starters, NOW), 50 + 25, 'rebuilt from defaults');
+  assert.equal(model.projectedTotal(100, starters, NOW), 100 + (50 - 40), "Sleeper's number adjusted for the lock");
+  assert.equal(model.projectedTotal(100, [{ days: locked }, { days: open }], NOW), 100, 'no lock, no change');
+});
+
 test("win probability matches Sleeper's (37% vs 63% at 157.23 vs 181.21)", () => {
   const [a, b] = model.winProbability(0, 157.23, 0, 181.21);
   assert.equal(Math.round(a * 100), 37);

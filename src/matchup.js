@@ -1,7 +1,7 @@
 // Matchup view: the selected team (left) against its opponent (right), slot by
 // slot, with Lock-In status and the lock control for the logged-in owner.
 (globalThis.SNP ||= {}).matchup = (() => {
-  const { playerDays, lockState, lockInDefault, winProbability } = globalThis.SNP.model;
+  const { playerDays, lockState, lockInDefault, projectedTotal, winProbability } = globalThis.SNP.model;
   const { esc, f2, headshot, teamLogo, teamName, avatar, record, shortName, injuryTag, positions, gameTime, weekday, slotBadge, weekNav, lineup } =
     globalThis.SNP.ui;
 
@@ -73,7 +73,6 @@
     }
     const all = Object.values(states);
     const counted = all.reduce((sum, st) => sum + (st.points ?? 0), 0);
-    const projected = all.reduce((sum, st) => sum + (st.counted ? st.points : lockInDefault(st.days) ?? 0), 0);
     const points = l.leg
       ? l.leg.custom_points ?? l.leg.points ?? counted
       : l.matchup?.custom_points ?? l.matchup?.points ?? counted;
@@ -82,7 +81,7 @@
       states,
       points: points ?? 0,
       anyPoints: all.some((st) => st.counted) || Boolean(l.leg?.points ?? l.matchup?.points),
-      proj: l.leg?.proj_points ?? projected,
+      proj: projectedTotal(l.leg?.proj_points, Object.entries(states).map(([id, st]) => ({ days: st.days, lock: l.locks[id] })), s.now),
       yetToPlay: all.filter((st) => st.yetToPlay).length,
     };
   }

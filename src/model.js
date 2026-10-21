@@ -258,6 +258,18 @@
     };
   }
 
+  // Team projection with Lock-In applied. Sleeper's own number (or the sum of
+  // default projections when it has none) assumes each starter scores their final
+  // game; a locked starter's actual score replaces that default.
+  function projectedTotal(base, starters, now = Date.now()) {
+    const defaults = starters.reduce((sum, { days }) => sum + (lockInDefault(days) ?? 0), 0);
+    const locked = starters.reduce((sum, { days, lock }) => {
+      const st = lockState(days, lock, now);
+      return st.locked ? sum + (st.points - (lockInDefault(days) ?? 0)) : sum;
+    }, 0);
+    return (base ?? defaults) + locked;
+  }
+
   // Sleeper's win probability (ported from its web app): each side is a normal
   // distribution centred on its projection, tighter as the current score nears it.
   function erfc(x) {
@@ -349,7 +361,7 @@
   return {
     weekDays, gamesByTeam, pointsByGame, playerDays, lockInDefault, ownedPicks, spotRefs, swapTargets, applyMove, describeMove,
     taxiEligible, taxiOpen, reserveEligible,
-    lockedGameId, lockState, winProbability, standingsRanks,
+    lockedGameId, lockState, projectedTotal, winProbability, standingsRanks,
     FAAB, rosterRoom, faabLeft, claimError, sortClaims,
   };
 })();

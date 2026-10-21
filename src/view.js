@@ -1,6 +1,6 @@
 // Pure render functions: (state, api log) -> HTML string for the shadow root.
 (globalThis.SNP ||= {}).view = (() => {
-  const { playerDays, lockInDefault, spotRefs, swapTargets, lockedGameId } = globalThis.SNP.model;
+  const { playerDays, lockInDefault, projectedTotal, spotRefs, swapTargets, lockedGameId } = globalThis.SNP.model;
   const { esc, f2, headshot, teamName, avatar, record, injuryTag, positions, gameTime, weekday, slotBadge, weekNav, notice, lineup, taxiRule, reserveRule } =
     globalThis.SNP.ui;
   const PREVIEW_CHARS = 20000;
@@ -109,8 +109,8 @@
     const { roster, week, matchup, leg, starters } = l;
     const owner = s.usersById?.[roster.owner_id];
     const image = avatar(s, roster);
-    const proj = leg?.proj_points ??
-      (week && starters.reduce((sum, id) => sum + (lockInDefault(playerDays(week, s.players[id]?.team, id)) ?? 0), 0));
+    const proj = week && projectedTotal(leg?.proj_points, starters.filter((id) => id && id !== '0')
+      .map((id) => ({ days: playerDays(week, s.players[id]?.team, id), lock: l.locks[id] })), s.now);
     const points = leg?.custom_points ?? leg?.points ?? matchup?.custom_points ?? matchup?.points;
     const opp = matchup?.matchup_id != null &&
       week.matchups.find((m) => m.matchup_id === matchup.matchup_id && m.roster_id !== roster.roster_id);
