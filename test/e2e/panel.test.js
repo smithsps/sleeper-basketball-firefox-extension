@@ -103,7 +103,7 @@ const leagueNav = `<!doctype html><title>Sleeper</title>
     link.className = 'link-button nav-league-item-wrapper';
     link.href = '/';
     link.dataset.sport = sport;
-    link.innerHTML = '<div class="nav-league-item"><div class="league-title">' + sport + '</div></div>';
+    link.innerHTML = '<div class="nav-league-item"><div class="nav-info-container"><div class="league-title">' + sport + '</div><div class="league-subtitle">2026 8-Team Standard</div></div></div>';
     const item = { league: { league_id: id, sport }, selectLeague: (x) => window.__selected.push(x), closeNavbar: () => {} };
     link.__reactInternalInstance$test = fiber(item, 2, fiber({ router, params: {} }, 5));
     document.getElementById('nav').append(link);
@@ -116,6 +116,8 @@ const leagueNav = `<!doctype html><title>Sleeper</title>
     history.pushState({}, '', '/leagues/' + link.__reactInternalInstance$test.return.return.memoizedProps.league.league_id);
   });
 </script>`;
+
+const leagueNavLoggedIn = leagueNav.replace('<title>Sleeper</title>', `<title>Sleeper</title><script>localStorage.setItem('token', '${FAKE_TOKEN}')</script>`);
 
 let context;
 let page;
@@ -900,5 +902,22 @@ test('sidebar: from a Matchup tab, an NBA league opens on its Matchup tab', asyn
   await page.locator('[data-sport=nba]').click();
   assert.equal(new URL(page.url()).pathname, `/leagues/${LEAGUE}`);
   assert.deepEqual(await page.evaluate(() => window.__sleeperNav), ['nba']);
+  documentBody = LOGGED_OUT;
+});
+
+test('sidebar: an NBA league shows the week\'s score and projection under its name', async () => {
+  const users = await (await fetch(`https://api.sleeper.app/v1/league/${LEAGUE}/users`)).json();
+  sleeper.me = users.find((u) => u.display_name === 'louhow').user_id;
+  documentBody = leagueNavLoggedIn;
+  await page.goto(`https://sleeper.com/leagues/${NFL_LEAGUE}/league`);
+  const nba = page.locator('[data-sport=nba]');
+  const preview = nba.locator('.snp-nav-matchup');
+  await preview.waitFor({ timeout: 30000 });
+  const text = (await preview.innerText()).replace(/\s+/g, ' ');
+  assert.match(text, /vs\. .+ \d+\.\d\d \d+\.\d\d \d+\.\d\d \d+\.\d\d$/, 'names, then score and projection for each side');
+  assert.equal(await nba.locator('.league-subtitle').isVisible(), false, 'replaces the format line');
+  assert.equal(await nba.locator('.league-title').isVisible(), true);
+  assert.equal(await page.locator('[data-sport=nfl] .snp-nav-matchup').count(), 0, 'other sports are Sleeper\'s own');
+  await page.screenshot({ path: `${OUT}sidebar-preview.png`, clip: { x: 0, y: 0, width: 400, height: 200 } });
   documentBody = LOGGED_OUT;
 });

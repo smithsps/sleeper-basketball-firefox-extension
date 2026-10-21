@@ -83,3 +83,19 @@ test('lock controls only for rosters the logged-in user owns', () => {
   const loggedOut = matchup.render(state({ me: null }));
   assert.doesNotMatch(loggedOut, /data-lock=/);
 });
+
+test('summary gives both teams\' names, points and projections for previews', () => {
+  const sum = matchup.summary(state());
+  assert.deepEqual(
+    [sum.mine.name, sum.mine.proj, sum.theirs.name, sum.theirs.proj],
+    ['COOKIE MONSTER', 157.23, 'Cling Kong', 181.21],
+  );
+  assert.equal(sum.mine.points, 0);
+  assert.equal(sum.mine.any, false);
+});
+
+test('summary has no opponent on a bye and nothing before the week loads', () => {
+  const bye = state({ weeks: { 1: week([{ roster_id: 10, matchup_id: null, starters: ['luka'], points: null, proj_points: 157.23, starters_games: {} }]) } });
+  assert.equal(matchup.summary(bye).theirs, null);
+  assert.equal(matchup.summary(state({ weeks: {} })), null);
+});

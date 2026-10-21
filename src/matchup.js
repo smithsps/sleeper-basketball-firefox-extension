@@ -42,6 +42,19 @@
       ${rows('Taxi Squad', () => 'TX', mine.taxi, theirs?.taxi || [], settings.taxi_slots)}`;
   }
 
+  // Both teams' totals for the shown week, for previews outside the panel (null without a lineup).
+  function summary(s) {
+    const mine = lineup(s);
+    if (!mine?.week) return null;
+    const oppId = opponentOf(mine);
+    const theirs = oppId != null ? lineup(s, oppId) : null;
+    const pick = (l) => {
+      const sd = side(s, l);
+      return { name: teamName(s, l.roster), points: sd.points, proj: sd.proj, any: sd.anyPoints };
+    };
+    return { mine: pick(mine), theirs: theirs && pick(theirs) };
+  }
+
   function opponentOf(l) {
     const own = l.leg ?? l.matchup;
     if (own?.matchup_id == null) return null;
@@ -170,5 +183,5 @@
     return `<span class="chip ${cls}" title="${esc(label)}"><img src="${teamLogo(d.opponent)}" alt="${esc(d.opponent)}"></span>`;
   }
 
-  return { render };
+  return { render, summary };
 })();

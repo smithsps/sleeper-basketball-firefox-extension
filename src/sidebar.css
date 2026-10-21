@@ -1,0 +1,4 @@
+/* NBA score previews in Sleeper's sidebar take the place of the league's format line. */
+.nav-info-container:has(> .snp-nav-matchup) > :not(.league-title):not(.snp-nav-matchup) {
+  display: none;
+}

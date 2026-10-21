@@ -46,6 +46,25 @@
     }
   }, true);
 
+  // The extension's own scripts can't see React props, so each sidebar league
+  // is labeled with its id and sport for them (the NBA score previews).
+  function labelLeagues() {
+    for (const link of document.querySelectorAll(NAV_LEAGUE)) {
+      const league = props(link, (x) => x.league && x.selectLeague)?.league;
+      if (!league) continue;
+      const id = String(league.league_id);
+      if (link.dataset.snpLeague !== id) link.dataset.snpLeague = id;
+      if (link.dataset.snpSport !== league.sport) link.dataset.snpSport = league.sport;
+    }
+  }
+  let labelFrame = 0;
+  new MutationObserver(() => {
+    labelFrame ||= requestAnimationFrame(() => {
+      labelFrame = 0;
+      labelLeagues();
+    });
+  }).observe(document, { childList: true, subtree: true });
+
   // Sleeper's sidebar sends every league to /leagues/<id>, which lands on its
   // League tab. From a Matchup tab, an NBA league opens on its Matchup tab
   // instead, through Sleeper's own router so its state stays in step.

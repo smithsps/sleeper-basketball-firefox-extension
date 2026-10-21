@@ -18,14 +18,19 @@
         "src/scoring.js",
         "src/model.js",
         "src/api.js",
+        "src/data.js",
         "src/ui.js",
         "src/view.js",
         "src/matchup.js",
         "src/waivers.js",
         "src/card.js",
+        "src/sidebar.js",
         "src/content.js"
       ],
-      "run_at": "document_start"
+      "run_at": "document_start",
+      "css": [
+        "src/sidebar.css"
+      ]
     },
     {
       "matches": [

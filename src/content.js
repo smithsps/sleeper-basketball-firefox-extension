@@ -4,12 +4,9 @@
 // On every page of an NBA league it also answers Sleeper's waiver and add
 // buttons (see page-hook.js) with a bid dialog.
 (() => {
-  const { createApi, view, model, scoring, ui, waivers, card } = globalThis.SNP;
+  const { createApi, createData, view, model, ui, waivers, card, matchup, sidebar } = globalThis.SNP;
   const ROUTE = /^\/leagues\/(\d+)(?:\/([^/]+))?/;
   const PANEL_PAGES = new Set(['team', 'matchup']);
-  const PLAYERS_PATH = '/v1/players/nba';
-  const PLAYERS_KEY = 'players:nba:v4';
-  const PLAYERS_TTL_MS = 12 * 3600e3;
   // Sleeper only allows trading picks this many seasons ahead; it isn't exposed per league.
   const PICK_SEASONS = 3;
   const FLOAT_AFTER_MS = 4000;
@@ -24,6 +21,9 @@
   const stylesheet = fetch(chrome.runtime.getURL('src/panel.css')).then((r) => r.text());
 
   let active = null;
+  // Score previews in Sleeper's sidebar use their own request log, apart from the panel's.
+  const sidebarApi = createApi(() => {});
+  const sidebarPreviews = sidebar.create(sidebarApi, createData(sidebarApi), matchup);
 
   // Sleeper is a single-page app, so route changes don't reload content scripts.
   // Polling also re-attaches the panel if React re-renders the tab.
@@ -36,6 +36,7 @@
     }
     active?.show(page);
     active?.attach();
+    sidebarPreviews.sync();
   }
 
   function mount(leagueId, page) {
@@ -96,6 +97,7 @@
     let disabled = false;
     let frame = 0;
     const api = createApi(schedule);
+    const loader = createData(api);
 
     function attach() {
       if (destroyed || disabled) return;
@@ -174,32 +176,6 @@
       schedule();
     }
 
-    async function loadPlayers(force) {
-      if (!force) {
-        const { [PLAYERS_KEY]: hit } = await chrome.storage.local.get(PLAYERS_KEY);
-        if (hit && Date.now() - hit.savedAt < PLAYERS_TTL_MS) {
-          api.cached(PLAYERS_PATH, hit.players, JSON.stringify(hit.players).length);
-          return hit.players;
-        }
-      }
-      const raw = await api.get(PLAYERS_PATH);
-      const players = {};
-      for (const [id, p] of Object.entries(raw)) {
-        players[id] = {
-          name: p.full_name || `${p.first_name || ''} ${p.last_name || ''}`.trim(),
-          first: p.first_name,
-          last: p.last_name,
-          team: p.team,
-          position: p.position,
-          positions: p.fantasy_positions || [],
-          injury: p.injury_status,
-          years_exp: p.years_exp,
-        };
-      }
-      await chrome.storage.local.set({ [PLAYERS_KEY]: { savedAt: Date.now(), players } });
-      return players;
-    }
-
     async function loadLeague(force = false) {
       state.error = null;
       const league = await api.get(`/v1/league/${leagueId}`);
@@ -215,13 +191,13 @@
       const [nbaState, users, rosters, bracket, traded, drafts, players, prefs, me] = await Promise.all([
         api.get('/v1/state/nba'),
         api.get(`/v1/league/${leagueId}/users`),
-        loadRosters(),
+        loader.loadRosters(leagueId),
         api.get(`/v1/league/${leagueId}/winners_bracket`),
         api.get(`/v1/league/${leagueId}/traded_picks`),
         api.get(`/v1/league/${leagueId}/drafts`),
-        loadPlayers(force),
+        loader.loadPlayers(force),
         chrome.storage.local.get(rosterKey),
-        loadMe(),
+        loader.loadMe(),
       ]);
       const savedRoster = rosters.find((r) => r.roster_id === prefs[rosterKey]);
       const myRoster = me && rosters.find((r) => r.owner_id === me || (r.co_owners || []).includes(me));
@@ -269,36 +245,6 @@
       schedule();
     }
 
-    // Rosters straight from Sleeper when logged in. The public REST endpoint is
-    // cached at the CDN for up to ~10 minutes, so it can lag a save the user just made.
-    async function loadRosters() {
-      if (api.loggedIn()) {
-        try {
-          const data = await api.graphql('league_rosters', `query league_rosters {
-  league_rosters(league_id: ${JSON.stringify(leagueId)}) {
-    roster_id owner_id co_owners players starters reserve taxi settings metadata
-  }
-}`, { auth: true });
-          if (data?.league_rosters?.length) return data.league_rosters;
-        } catch (err) {
-          console.warn('[sleeper-nba-panel] league_rosters unavailable, using the public endpoint', err);
-        }
-      }
-      return api.get(`/v1/league/${leagueId}/rosters`);
-    }
-
-    // Who is logged in, if anyone. Only used to decide which roster can be edited.
-    async function loadMe() {
-      if (!api.loggedIn()) return null;
-      try {
-        const data = await api.graphql('me', 'query me { me { user_id } }', { auth: true });
-        return data?.me?.user_id ?? null;
-      } catch (err) {
-        console.warn('[sleeper-nba-panel] could not identify the logged-in user', err);
-        return null;
-      }
-    }
-
     function updatePicks() {
       const { league, rosters, rosterId, pickContext } = state;
       state.picks = model.ownedPicks({
@@ -313,60 +259,8 @@
     async function loadWeek(week) {
       schedule();
       if (state.weeks[week]) return;
-      const { league } = state;
-      const season = league.season;
-      const seasonType = league.season_type || 'regular';
-      const scoresQuery = `query scores {
-  scores(sport: "nba", season_type: ${JSON.stringify(seasonType)}, season: ${JSON.stringify(season)}, week: ${Number(week)}) {
-    date game_id metadata season season_type sport status start_time week
-  }
-}`;
-      const standingsQuery = `query roster_standings {
-  roster_standings(league_id: ${JSON.stringify(leagueId)}, round: ${Number(week)}) { roster_id rank }
-}`;
-      const [matchups, projections, stats, scores, research, legs, standings] = await Promise.all([
-        api.get(`/v1/league/${leagueId}/matchups/${week}`),
-        api.get(`/projections/nba/${season}/${week}?season_type=${seasonType}`),
-        api.get(`/stats/nba/${season}/${week}?season_type=${seasonType}`),
-        api.graphql(`scores (week ${week})`, scoresQuery),
-        api.get(`/players/nba/research/${seasonType}/${season}/${week}?league_type=${league.settings?.type ?? 0}`),
-        loadLegs(week),
-        api.graphql(`roster_standings (week ${week})`, standingsQuery)
-          .then((data) => data?.roster_standings ?? [])
-          .catch(() => []),
-      ]);
-      const games = scores?.scores || [];
-      const scoringSettings = league.scoring_settings || {};
-      state.weeks[week] = {
-        matchups: matchups || [],
-        days: model.weekDays(games),
-        gamesByTeam: model.gamesByTeam(games),
-        games: games.map((g) => ({ start: g.start_time, status: g.status })),
-        proj: model.pointsByGame(projections || [], scoringSettings, scoring.scoreStats),
-        actual: model.pointsByGame(stats || [], scoringSettings, scoring.scoreStats),
-        research: research || {},
-        legs,
-        ranks: model.standingsRanks(state.rosters, standings),
-      };
+      state.weeks[week] = await loader.loadWeek({ league: state.league, leagueId, rosters: state.rosters, week, full: true });
       schedule();
-    }
-
-    // Lineups, Lock-In picks (starters_games) and server projections for a week.
-    // Needs the logged-in session; null when logged out or refused.
-    async function loadLegs(week) {
-      if (!api.loggedIn()) return null;
-      const query = `query matchup_legs {
-  matchup_legs(league_id: ${JSON.stringify(leagueId)}, round: ${Number(week)}) {
-    leg matchup_id roster_id round starters points proj_points max_points custom_points starters_games subs
-  }
-}`;
-      try {
-        const data = await api.graphql(`matchup_legs (week ${week})`, query, { auth: true });
-        return data?.matchup_legs ?? null;
-      } catch (err) {
-        console.warn('[sleeper-nba-panel] matchup_legs unavailable', err);
-        return null;
-      }
     }
 
     // Writes the week's matchup leg, as Sleeper's apps do in season. Lock-In
@@ -380,7 +274,7 @@
     leg roster_id round starters starters_games
   }
 }`, { auth: true, variables });
-      state.weeks[week].legs = await loadLegs(week);
+      state.weeks[week].legs = await loader.loadLegs(leagueId, week);
     }
 
     // Saves a lineup the way Sleeper's web app does: during the season starters
@@ -572,7 +466,7 @@
     ${TRANSACTION_FIELDS}
   }
 }`, { auth: true, variables });
-          state.rosters = await loadRosters();
+          state.rosters = await loader.loadRosters(leagueId);
         }
       }, waiver
         ? `${bid ? `$${Number(m.bid)} bid` : 'Claim'} placed for ${name(m.playerId)}${dropping}`

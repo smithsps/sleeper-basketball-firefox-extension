@@ -36,6 +36,14 @@ The projection follows Lock-In rules: an unlocked player scores their final game
 Win probability is Sleeper's own formula, ported from its web app: each side is a normal distribution centred on its projection, narrowing as the score approaches it.
 Rank comes from `roster_standings`; before any games are played, it falls back to the standings order (record, points, then waiver order), which is what Sleeper shows then.
 
+### Sidebar
+
+- In the wide sidebar, each NBA league shows "you vs. opponent" with the week's score and projection for both sides, as Sleeper does for its other sports.
+- It uses Sleeper's own markup and classes, takes the place of the league's format line, and leaves the narrow avatar-only sidebar alone.
+- Needs a logged-in session to know which team is yours, and only shows for leagues in season.
+- Numbers come from the same data as the Matchup tab (Lock-In rules included).
+  They refresh every minute while a game is live and every ten minutes otherwise.
+
 ### Player card
 
 Clicking a player's name or headshot on the Team or Matchup tab, or a player on the Players or Trend tab (instead of Sleeper's own NBA card), opens a card laid out like Sleeper's NFL player card:
