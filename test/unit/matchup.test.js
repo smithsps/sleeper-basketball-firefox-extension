@@ -99,3 +99,12 @@ test('summary has no opponent on a bye and nothing before the week loads', () =>
   assert.equal(matchup.summary(bye).theirs, null);
   assert.equal(matchup.summary(state({ weeks: {} })), null);
 });
+
+test('pairs lists every matchup with both teams and win probability', () => {
+  const [m, ...rest] = matchup.pairs(state());
+  assert.equal(rest.length, 0);
+  assert.deepEqual([m.id, m.a.roster.roster_id, m.b.roster.roster_id, m.a.mine, m.b.mine], [7, 10, 5, true, false]);
+  assert.equal(Math.round(m.pa * 100), 37);
+  assert.equal(Math.round(m.pb * 100), 63);
+  assert.equal(matchup.pairs(state({ weeks: {} })), null);
+});

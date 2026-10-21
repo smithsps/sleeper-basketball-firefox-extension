@@ -1,12 +1,12 @@
-// Fills Sleeper's empty NBA Team and Matchup tabs (sleeper.com/leagues/<id>/team
-// and /matchup) with rosters, schedules, projections, lineup swaps and Lock-In.
+// Fills Sleeper's empty NBA Team, Matchup and Scores tabs (sleeper.com/leagues/<id>/team,
+// /matchup and /scores) with rosters, schedules, projections, lineup swaps and Lock-In.
 // Falls back to a floating panel when the page has no placeholder to fill.
 // On every page of an NBA league it also answers Sleeper's waiver and add
 // buttons (see page-hook.js) with a bid dialog.
 (() => {
   const { createApi, createData, view, model, ui, waivers, card, matchup, sidebar } = globalThis.SNP;
   const ROUTE = /^\/leagues\/(\d+)(?:\/([^/]+))?/;
-  const PANEL_PAGES = new Set(['team', 'matchup']);
+  const PANEL_PAGES = new Set(['team', 'matchup', 'scores']);
   // Sleeper only allows trading picks this many seasons ahead; it isn't exposed per league.
   const PICK_SEASONS = 3;
   const FLOAT_AFTER_MS = 4000;
@@ -63,7 +63,7 @@
 
     const state = {
       leagueId,
-      page: PANEL_PAGES.has(page) ? page : 'team', // panel view: 'team' | 'matchup'
+      page: PANEL_PAGES.has(page) ? page : 'team', // panel view: 'team' | 'matchup' | 'scores'
       onPanel: PANEL_PAGES.has(page), // whether the URL is a tab the panel fills
       tab: 'page', // 'page' | 'api'
       now: Date.now(),

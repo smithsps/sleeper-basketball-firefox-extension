@@ -15,9 +15,9 @@ User-facing docs: `README.md` (install, privacy) and `docs/DETAILS.md` (features
 
 ## Layout
 
-- `manifest.json`: content scripts run at `document_start` on `sleeper.com`, in this order: `scoring`, `model`, `api`, `data`, `ui`, `view`, `matchup`, `waivers`, `card`, `sidebar`, `content`. `page-hook.js` runs separately in the page's MAIN world.
+- `manifest.json`: content scripts run at `document_start` on `sleeper.com`, in this order: `scoring`, `model`, `api`, `data`, `ui`, `view`, `matchup`, `scores`, `waivers`, `card`, `sidebar`, `content`. `page-hook.js` runs separately in the page's MAIN world.
 - `src/model.js`: pure rules (schedule, Lock-In, lineup/taxi/IR moves, waivers, win probability). Unit tested.
-- `src/ui.js`, `src/view.js`, `src/matchup.js`, `src/waivers.js`, `src/card.js` (player card): pure state -> HTML render functions.
+- `src/ui.js`, `src/view.js`, `src/matchup.js`, `src/scores.js`, `src/waivers.js`, `src/card.js` (player card): pure state -> HTML render functions.
 - `src/data.js`: loads players, rosters, lineups and a week's data; shared by the panel and the sidebar previews.
 - `src/sidebar.js`: score previews for NBA leagues in Sleeper's sidebar (markup from Sleeper's own NFL items; `src/sidebar.css` hides the format line they replace).
 - `src/content.js`: one session per league (survives tab switches), data loading, saves, events. Renders into a shadow root that replaces Sleeper's "not yet available" placeholder; dialogs render in a separate page-level host.

@@ -4,11 +4,12 @@
   const { esc, f2, headshot, teamName, avatar, record, injuryTag, positions, gameTime, weekday, slotBadge, weekNav, notice, lineup, taxiRule, reserveRule } =
     globalThis.SNP.ui;
   const PREVIEW_CHARS = 20000;
-  const PAGES = { team: 'Team', matchup: 'Matchup' };
+  const PAGES = { team: 'Team', matchup: 'Matchup', scores: 'Scores' };
 
   function render(state, log) {
     const body = state.tab === 'api' ? apiView(state, log)
       : state.page === 'matchup' ? globalThis.SNP.matchup.render(state)
+      : state.page === 'scores' ? globalThis.SNP.scores.render(state)
       : teamView(state);
     // The notice floats over the panel so showing or clearing it never shifts the cards being clicked.
     // While a dialog is open it shows over the dialog instead.

@@ -55,6 +55,24 @@
     return { mine: pick(mine), theirs: theirs && pick(theirs) };
   }
 
+  // Every matchup of the shown week, in Sleeper's order: both teams' totals and win probability.
+  function pairs(s) {
+    const week = s.weeks?.[s.week];
+    if (!week || !s.players) return null;
+    const pool = week.legs ?? week.matchups;
+    const byId = new Map();
+    for (const m of pool) {
+      if (m.matchup_id == null) continue;
+      if (!byId.has(m.matchup_id)) byId.set(m.matchup_id, []);
+      byId.get(m.matchup_id).push(m.roster_id);
+    }
+    return [...byId.entries()].sort(([a], [b]) => a - b).map(([id, rosterIds]) => {
+      const [a, b] = rosterIds.map((rid) => lineup(s, rid)).filter(Boolean).map((l) => ({ ...side(s, l), roster: l.roster, mine: l.mine }));
+      const [pa, pb] = b ? winProbability(a.points, a.proj, b.points, b.proj) : [null, null];
+      return { id, a, b: b ?? null, pa, pb };
+    });
+  }
+
   function opponentOf(l) {
     const own = l.leg ?? l.matchup;
     if (own?.matchup_id == null) return null;
@@ -183,5 +201,5 @@
     return `<span class="chip ${cls}" title="${esc(label)}"><img src="${teamLogo(d.opponent)}" alt="${esc(d.opponent)}"></span>`;
   }
 
-  return { render, summary };
+  return { render, summary, pairs };
 })();

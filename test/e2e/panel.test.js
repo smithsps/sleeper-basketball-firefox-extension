@@ -514,6 +514,21 @@ test('matchup: switching to Team keeps the session and data', async () => {
   assert.equal(await page.locator(panel('[data-tab="api"] .count')).textContent(), calls, 'no refetch');
 });
 
+test('scores: fills the Scores tab with every matchup of the week', async () => {
+  documentBody = LOGGED_OUT;
+  await page.goto(`https://sleeper.com/leagues/${LEAGUE}/scores`);
+  await page.locator(panel('.sc-card')).first().waitFor({ timeout: 30000 });
+  assert.equal(await page.locator('.empty-panel-container').isVisible(), false);
+  assert.match(await page.locator(panel('[data-tab="page"]')).textContent(), /Scores/);
+  const users = await (await fetch(`https://api.sleeper.app/v1/league/${LEAGUE}/users`)).json();
+  const cards = await page.locator(panel('.sc-card')).count();
+  assert.ok(cards >= 2, 'one card per matchup');
+  assert.equal(await page.locator(panel('.sc-team')).count(), cards * 2);
+  assert.match(await page.locator(panel('.sc-card')).first().innerText(), /\d+% win/);
+  assert.ok(users.length >= cards * 2 - 1);
+  await page.screenshot({ path: `${OUT}scores.png` });
+});
+
 test('matchup: locks in a finished game for your starter', async () => {
   documentBody = LOGGED_IN;
   await startMidWeek();

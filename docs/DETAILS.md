@@ -36,6 +36,11 @@ The projection follows Lock-In rules: an unlocked player scores their final game
 Win probability is Sleeper's own formula, ported from its web app: each side is a normal distribution centred on its projection, narrowing as the score approaches it.
 Rank comes from `roster_standings`; before any games are played, it falls back to the standings order (record, points, then waiver order), which is what Sleeper shows then.
 
+### Scores
+
+- Fills the Scores tab with every matchup of the week: both teams stacked, with record, win probability, yet-to-play count, projection and points, and the leader's points highlighted.
+- Uses the same data as the Matchup tab, so it adds no requests. Week arrows work as on the other tabs.
+
 ### Sidebar
 
 - In the wide sidebar, each NBA league shows "you vs. opponent" with the week's score and projection for both sides, as Sleeper does for its other sports.
