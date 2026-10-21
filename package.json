@@ -10,7 +10,8 @@
     "build": "node scripts/build.js",
     "build:firefox": "node scripts/build.js firefox",
     "build:chrome": "node scripts/build.js chrome",
-    "package": "npm run build && npx web-ext build -s dist/firefox -a dist/packages -n sleeper-nba-firefox-{version}.zip --overwrite-dest && npx web-ext build -s dist/chrome -a dist/packages -n sleeper-nba-chrome-{version}.zip --overwrite-dest"
+    "package": "npm run build && npx web-ext build -s dist/firefox -a dist/packages -n sleeper-nba-firefox-{version}.zip --overwrite-dest && npx web-ext build -s dist/chrome -a dist/packages -n sleeper-nba-chrome-{version}.zip --overwrite-dest",
+    "sign": "node scripts/sign.js"
   },
   "devDependencies": {
     "playwright": "^1.64.1"
