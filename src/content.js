@@ -4,7 +4,7 @@
 // On every page of an NBA league it also answers Sleeper's waiver and add
 // buttons (see page-hook.js) with a bid dialog.
 (() => {
-  const { createApi, createData, view, model, ui, waivers, card, matchup, sidebar } = globalThis.SNP;
+  const { createApi, createData, view, model, ui, waivers, card, matchup, scores, sidebar } = globalThis.SNP;
   const ROUTE = /^\/leagues\/(\d+)(?:\/([^/]+))?/;
   const PANEL_PAGES = new Set(['team', 'matchup', 'scores']);
   // Sleeper only allows trading picks this many seasons ahead; it isn't exposed per league.
@@ -14,6 +14,8 @@
   const CLOCK_MS = 60e3;
   // The Scores tab refetches the week this often while one of its games is live.
   const LIVE_MS = 30e3;
+  // Plays shown at a time on the Scores tab's Plays view.
+  const PLAY_PAGE = 25;
   // Career seasons fetched for the player card (one request each).
   const CAREER_SEASONS = 10;
   const CARD_SEASON_TABS = 6;
@@ -85,6 +87,8 @@
       openCalls: new Set(),
       me: null, // logged-in user id, when the page has a session
       gameId: null, // game open on the Scores tab; null picks one (a live game, else the latest)
+      gameTab: 'overview', // 'overview' | 'plays'
+      plays: {}, // play-by-play by game id: { rows, full, loading, error }
       swap: null, // lineup spot picked to swap, e.g. 's:2' or 'b:<player id>'
       saving: false,
       notice: null, // { kind: 'error' | 'ok', text }
@@ -615,7 +619,14 @@
       const game = e.target.closest('[data-game]');
       if (game) {
         state.gameId = game.dataset.game;
-        return schedule();
+        schedule();
+        return ensurePlays();
+      }
+      const gameTab = e.target.closest('[data-gtab]');
+      if (gameTab) {
+        state.gameTab = gameTab.dataset.gtab;
+        schedule();
+        return ensurePlays();
       }
       const spot = e.target.closest('[data-spot]');
       if (spot) return pickSpot(spot.dataset.spot);
@@ -637,6 +648,12 @@
       if (action === 'prev' && state.week > state.minWeek) setWeek(state.week - 1);
       if (action === 'next' && state.week < state.maxWeek) setWeek(state.week + 1);
       if (action === 'refresh') loadLeague(true).catch(fail);
+      if (action === 'all-plays') loadPlays(openGame(), true);
+      if (action === 'more-plays') {
+        const entry = state.plays[openGame()?.id];
+        if (entry) entry.shown = (entry.shown ?? PLAY_PAGE) + PLAY_PAGE;
+        schedule();
+      }
       if (action === 'claims') openClaims();
     });
     root.addEventListener('change', (e) => {
@@ -744,6 +761,47 @@
     // Lock windows and game states move with the clock.
     const clock = setInterval(schedule, CLOCK_MS);
 
+    // The game open on the Scores tab (not the leaders list).
+    function openGame() {
+      const week = state.weeks[state.week];
+      const list = week ? scores.games(week) : [];
+      const id = scores.pickGame(list, state.gameId);
+      return list.find((g) => g.id === id) ?? null;
+    }
+
+    function ensurePlays() {
+      const game = openGame();
+      if (state.gameTab === 'plays' && game && game.status !== 'pre_game' && !state.plays[game.id]) loadPlays(game);
+    }
+
+    // A game's plays: the latest 20 by default (all of them on request), merged into what's shown.
+    async function loadPlays(game, full = false) {
+      if (!game) return;
+      const entry = (state.plays[game.id] ??= { rows: [], full: false, loading: false, error: null });
+      if (entry.loading || (full && entry.full)) return;
+      entry.loading = true;
+      entry.error = null;
+      schedule();
+      const query = { season: state.league.season, seasonType: state.league.season_type || 'regular', gameId: game.id };
+      try {
+        const rows = full ? await loader.loadWeekPlays({ ...query, week: state.week }) : await loader.loadGamePlays(query);
+        const byId = new Map(entry.rows.map((p) => [p.play_id, p]));
+        for (const p of rows) byId.set(p.play_id, p);
+        entry.rows = [...byId.values()];
+        // Loading the rest reveals one more page of what is now available.
+        if (full) {
+          entry.full = true;
+          entry.shown = (entry.shown ?? PLAY_PAGE) + PLAY_PAGE;
+        }
+      } catch (err) {
+        console.warn('[sleeper-nba-panel] plays unavailable', err);
+        entry.error = `Could not load plays: ${err.message || err}`;
+      } finally {
+        entry.loading = false;
+        schedule();
+      }
+    }
+
     // Live scores: the Scores tab keeps the shown week current while a game is on.
     let refreshing = false;
     async function refreshLive() {
@@ -755,6 +813,8 @@
         // The panel-only parts (research, ranks) don't change with the games.
         if (state.weeks[state.week] === week) Object.assign(week, fresh, { research: week.research, ranks: week.ranks });
         schedule();
+        const game = openGame();
+        if (state.gameTab === 'plays' && game?.status === 'in_game') loadPlays(game);
       } catch (err) {
         console.warn('[sleeper-nba-panel] live refresh failed', err);
       } finally {

@@ -7,6 +7,7 @@
   const LEADERS = 'leaders';
   const LEADER_COUNT = 30;
   const PREVIEW_COUNT = 8;
+  const PLAY_PAGE = 25;
   const STAT_COLUMNS = [['min', 'MIN'], ['pts', 'PTS'], ['reb', 'REB'], ['ast', 'AST'], ['stl', 'STL'], ['blk', 'BLK'], ['to', 'TO']];
 
   const isTeamRow = (id) => String(id).startsWith('TEAM_');
@@ -142,15 +143,78 @@
   }
 
   function detail(s, week, game) {
+    const tabs = ['overview', 'plays'].map((id) => `<button data-gtab="${id}" class="${(s.gameTab || 'overview') === id ? 'active' : ''}">${id.toUpperCase()}</button>`).join('');
+    const body = s.gameTab === 'plays' ? plays(s, game) : box(s, week, game);
+    return `${scoreHeader(game)}<div class="gc-tabs" role="tablist">${tabs}</div>${body}`;
+  }
+
+  function box(s, week, game) {
     const { rows, projected } = gamePlayers(s, week, game);
     const owner = owners(s);
     const side = (cls) => {
       const mine = rows.filter((p) => p.team === game[cls].team);
       return playerTable(s, game[cls].team, projected ? mine.slice(0, PREVIEW_COUNT) : mine, projected, owner);
     };
-    return `${scoreHeader(game)}
-      <div class="gc-note">${projected ? 'Projected top scorers, before tip-off' : 'Box score'}</div>
+    return `<div class="gc-note">${projected ? 'Projected top scorers, before tip-off' : 'Box score'}</div>
       ${side('away')}${side('home')}`;
+  }
+
+  // A play from either of Sleeper's queries, reduced to what the list shows.
+  function normalizePlay(p) {
+    const m = p.metadata || {};
+    return {
+      id: p.play_id,
+      seq: p.sequence,
+      type: m.play_type,
+      team: m.team,
+      text: m.description || '',
+      quarter: Number(m.quarter_name) || null,
+      clock: m.time_remaining_minutes == null ? '' : `${Number(m.time_remaining_minutes)}:${String(m.time_remaining_seconds ?? 0).padStart(2, '0')}`,
+      scoring: (m.scoring_points ?? 0) > 0,
+      away: m.away_points,
+      home: m.home_points,
+      stats: (p.play_stats || []).map((ps) => ({ id: String(ps.player?.player_id ?? ps.player_id), stats: ps.stats || {}, row: ps.player })),
+    };
+  }
+
+  // Latest first; lineup changes are noise.
+  function playList(raw) {
+    return (raw || []).filter((p) => p.metadata?.play_type !== 'lineup_change').map(normalizePlay).sort((a, b) => b.seq - a.seq);
+  }
+
+  const periodLabel = (q) => (q > 4 ? `OT${q > 5 ? q - 4 : ''}` : `Q${q}`);
+
+  // Each player's fantasy points from one play, as chips ("S. Fox +2.00").
+  function chips(s, play, owner) {
+    const { scoreStats } = globalThis.SNP.scoring;
+    return play.stats.map((ps) => {
+      const fpts = scoreStats(s.league.scoring_settings || {}, ps.stats);
+      if (!fpts) return '';
+      const who = s.players[ps.id] || { name: `${ps.row?.first_name || ''} ${ps.row?.last_name || ''}`.trim() || `#${ps.id}`, first: ps.row?.first_name, last: ps.row?.last_name };
+      return `<span class="gc-chip${owner[ps.id]?.mine ? ' mine' : ''}${fpts < 0 ? ' neg' : ''}">${esc(shortName(who))} ${fpts > 0 ? '+' : ''}${Number(fpts.toFixed(2))}</span>`;
+    }).join('');
+  }
+
+  function plays(s, game) {
+    const entry = s.plays?.[game.id];
+    if (game.status === 'pre_game') return '<p class="msg">No plays yet</p>';
+    if (!entry || (entry.loading && !entry.rows.length)) return '<p class="msg">Loading plays…</p>';
+    if (entry.error && !entry.rows.length) return `<p class="msg error">${esc(entry.error)}</p>`;
+    const list = playList(entry.rows);
+    if (!list.length) return '<p class="msg">No plays yet</p>';
+    const owner = owners(s);
+    const shown = entry.shown ?? PLAY_PAGE;
+    const visible = list.slice(0, shown);
+    const next = list.length > shown
+      ? `<button data-action="more-plays">Show more (${list.length - shown} left)</button>`
+      : entry.full ? '' : `<button data-action="all-plays" ${entry.loading ? 'disabled' : ''}>${entry.loading ? 'Loading…' : 'Load earlier plays'}</button>`;
+    const more = `<div class="gc-more"><span>Showing ${visible.length} of ${list.length}${entry.full ? '' : ' (latest only)'}</span>${next}</div>`;
+    return `<div class="gc-plays">${visible.map((p) => `<div class="gc-play${p.scoring ? ' scoring' : ''}">
+      <span class="gc-clock">${p.quarter ? `${periodLabel(p.quarter)} ${esc(p.clock)}` : ''}</span>
+      ${p.team ? `<img src="${teamLogo(p.team)}" alt="${esc(p.team)}">` : '<span></span>'}
+      <div class="gc-ptext">${esc(p.text)}<div class="gc-chips">${chips(s, p, owner)}</div></div>
+      <span class="gc-pscore">${p.scoring ? `${esc(game.away.team)} ${p.away} – ${esc(game.home.team)} ${p.home}` : ''}</span>
+    </div>`).join('')}</div>${more}${entry.error ? `<p class="msg error">${esc(entry.error)}</p>` : ''}`;
   }
 
   function scoreHeader(game) {
@@ -197,5 +261,5 @@
     }).join('')}`;
   }
 
-  return { render, games, pickGame, gamePlayers, leaders, statLine, statusText };
+  return { render, games, pickGame, gamePlayers, leaders, statLine, statusText, playList };
 })();

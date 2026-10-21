@@ -1975,3 +1975,94 @@ button.danger.solid:hover:not(:disabled) {
     display: none;
   }
 }
+
+/* Game Center: overview / plays tabs and the play list. */
+.gc-tabs {
+  display: flex;
+  gap: 6px;
+  margin: 12px 0 0;
+}
+.gc-tabs button {
+  padding: 5px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--cell);
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+.gc-tabs button.active,
+.gc-tabs button.active:hover:not(:disabled) {
+  background: var(--accent);
+  color: #022047;
+}
+.gc-play {
+  display: grid;
+  grid-template-columns: 62px 22px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  padding: 7px 4px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+}
+.gc-play img {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+}
+.gc-clock {
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.gc-play.scoring .gc-ptext {
+  font-weight: 700;
+}
+.gc-pscore {
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.gc-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 3px;
+}
+.gc-chip {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--cell);
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 700;
+}
+.gc-chip.mine {
+  background: rgba(0, 206, 184, 0.18);
+  color: var(--accent);
+}
+.gc-chip.neg {
+  color: var(--danger);
+}
+.gc-more {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 10px 0 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.gc-more button {
+  padding: 5px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--cell);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}

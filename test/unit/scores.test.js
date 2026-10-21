@@ -97,3 +97,50 @@ test('loads, and has nothing to show without games', () => {
   assert.match(text(scores.render(state({ weeks: {} }))), /Loading week/);
   assert.match(text(scores.render(state({ weeks: { 1: { days: [], scores: [] } } }))), /No games this week/);
 });
+
+const raw = (id, seq, type, extra = {}, stats = []) => ({
+  play_id: id, game_id: 'g1', sequence: seq, week: 1,
+  metadata: { play_type: type, description: `play ${id}`, quarter_name: '3', time_remaining_minutes: '9', time_remaining_seconds: '05', team: 'LAL', away_points: 60, home_points: 62, ...extra },
+  play_stats: stats,
+});
+
+test('plays list latest first, without lineup changes, from either query shape', () => {
+  const list = scores.playList([raw('a', 1, 'two_point_miss'), raw('b', 3, 'lineup_change'), raw('c', 2, 'two_point_made', { scoring_points: 2 })]);
+  assert.deepEqual(Array.from(list, (p) => p.id), ['c', 'a']);
+  assert.equal(list[0].scoring, true);
+  assert.equal(list[0].clock, '9:05');
+  const [graphql, rest] = scores.playList([
+    raw('x', 2, 'two_point_made', {}, [{ stats: { pts: 2 }, player: { player_id: 'luka' } }]),
+    raw('y', 1, 'two_point_made', {}, [{ stats: { pts: 2 }, player_id: 'luka' }]),
+  ]);
+  assert.equal(graphql.stats[0].id, 'luka');
+  assert.equal(rest.stats[0].id, 'luka');
+});
+
+test('the plays tab shows each play with its fantasy points and who it helps', () => {
+  const s = state({ gameTab: 'plays', gameId: 'g1' });
+  s.league = { scoring_settings: { pts: 1 } };
+  s.plays = { g1: { full: false, loading: false, rows: [
+    raw('a', 1, 'two_point_made', { scoring_points: 2, description: 'Luka makes a layup' }, [{ stats: { pts: 2 }, player: { player_id: 'luka' } }]),
+    raw('b', 2, 'turnover', { description: 'Mystery turnover' }, [{ stats: {}, player_id: 'don' }]),
+  ] } };
+  const out = scores.render(s);
+  assert.match(text(out), /Q3 9:05.*Mystery turnover.*Q3 9:05.*Luka makes a layup L\. Doncic \+2 GSW 60 – LAL 62/);
+  assert.match(out, /gc-chip mine/, 'your player is marked');
+  assert.match(text(out), /Showing 2 of 2 \(latest only\) Load earlier plays/);
+  assert.match(out, /class="active">PLAYS/);
+  s.plays.g1.full = true;
+  assert.doesNotMatch(text(scores.render(s)), /Load earlier plays/);
+  s.plays.g1.rows = Array.from({ length: 30 }, (_, i) => raw(`p${i}`, i, 'two_point_miss'));
+  assert.match(text(scores.render(s)), /Showing 25 of 30 Show more \(5 left\)/);
+  s.plays.g1.shown = 50;
+  assert.match(text(scores.render(s)), /Showing 30 of 30$/);
+});
+
+test('the plays tab handles loading, errors, and games that have not started', () => {
+  const s = state({ gameTab: 'plays', gameId: 'g1' });
+  assert.match(text(scores.render(s)), /Loading plays/);
+  s.plays = { g1: { rows: [], loading: false, error: 'Could not load plays: boom' } };
+  assert.match(text(scores.render(s)), /boom/);
+  assert.match(text(scores.render({ ...s, gameId: 'g2' })), /No plays yet/);
+});

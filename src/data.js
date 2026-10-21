@@ -123,5 +123,23 @@
     };
   }
 
-  return { loadPlayers, loadRosters, loadMe, loadLegs, loadWeek };
+  // Play-by-play. Sleeper's per-game query only returns the game's latest 20 plays;
+  // the week query returns every play of every game that week (a lot of data).
+  function loadGamePlays({ season, seasonType, gameId }) {
+    return api.graphql(`plays (game ${gameId})`, `query plays {
+  plays(sport: "nba", season_type: ${JSON.stringify(seasonType)}, season: ${JSON.stringify(season)}, game_id: ${JSON.stringify(gameId)}) {
+    play_id game_id sequence week metadata play_stats { stats player }
+  }
+}`).then((data) => data?.plays ?? []);
+  }
+
+  function loadWeekPlays({ season, seasonType, week, gameId }) {
+    return api.graphql(`plays (week ${week})`, `query plays {
+  plays(sport: "nba", season_type: ${JSON.stringify(seasonType)}, season: ${JSON.stringify(season)}, week: ${Number(week)}) {
+    play_id game_id sequence week metadata play_stats { stats player }
+  }
+}`).then((data) => (data?.plays ?? []).filter((p) => p.game_id === gameId));
+  }
+
+  return { loadPlayers, loadRosters, loadMe, loadLegs, loadWeek, loadGamePlays, loadWeekPlays };
 };

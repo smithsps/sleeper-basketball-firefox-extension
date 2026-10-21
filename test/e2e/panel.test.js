@@ -537,6 +537,29 @@ test('scores: fills the Scores tab like a Game Center, with a box score per game
   await page.screenshot({ path: `${OUT}scores-leaders.png` });
 });
 
+test('scores: the Plays tab pages through a game\'s plays and can load them all', async () => {
+  documentBody = LOGGED_OUT;
+  await page.goto(`https://sleeper.com/leagues/${LEAGUE}/scores`);
+  await page.locator(panel('.gc-game:not(.leaders)')).first().waitFor({ timeout: 30000 });
+  // A finished game from week 1 has its full history on Sleeper.
+  await page.locator(panel('.gc-game:not(.leaders)')).filter({ hasText: 'FINAL' }).first().click();
+  await page.locator(panel('[data-gtab="plays"]')).click();
+  await page.locator(panel('.gc-play')).first().waitFor({ timeout: 30000 });
+  const latest = await page.locator(panel('.gc-play')).count();
+  assert.ok(latest > 0 && latest <= 20, 'the latest plays first');
+  assert.match(await page.locator(panel('.gc-play .gc-clock')).first().textContent(), /Q\d \d+:\d\d/);
+  assert.match(await shadowText('.gc-more'), /\(latest only\).*Load earlier plays/);
+  await page.screenshot({ path: `${OUT}scores-plays.png` });
+  await page.locator(panel('[data-action="all-plays"]')).click();
+  await page.locator(panel('[data-action="more-plays"]')).waitFor({ timeout: 60000 });
+  const page1 = await page.locator(panel('.gc-play')).count();
+  assert.ok(page1 > latest, 'a page more after loading everything');
+  await page.locator(panel('[data-action="more-plays"]')).click();
+  await page.locator(panel('.gc-play')).nth(page1).waitFor();
+  await page.locator(panel('[data-gtab="overview"]')).click();
+  await page.locator(panel('.gc-box')).first().waitFor();
+});
+
 test('matchup: locks in a finished game for your starter', async () => {
   documentBody = LOGGED_IN;
   await startMidWeek();

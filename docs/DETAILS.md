@@ -43,6 +43,9 @@ Fills the Scores tab like Sleeper's Game Center.
 - The week's games down the left, by day: status (FINAL, OT, HALF, a running clock, or the tip-off time), both teams and their scores.
 - The selected game opens with team scores, records, the quarter-by-quarter line, and a box score per team: minutes, points, rebounds, assists, steals, blocks, turnovers, then fantasy points (your league's scoring), projection and who owns the player here.
 - Before tip-off the box shows each team's projected top scorers.
+- A PLAYS tab shows the game's play-by-play, newest first, 25 at a time, with each player's fantasy points from the play (yours highlighted).
+  Sleeper only returns a game's latest 20 plays, so older ones load on request (`Load earlier plays`), which fetches the whole week's plays (a lot of data).
+  While a game is live, the latest plays refresh with the rest of the tab.
 - `WEEK LEADERS` ranks the week's top fantasy scorers with their stat lines.
 - A game that is live opens by default, otherwise the latest finished one. Clicking a player opens the player card.
 - While a game is live and the tab is open, the week is refetched every 30 seconds.
@@ -114,6 +117,7 @@ It enables:
 | `GET /players/nba/<id>`, `/stats/nba/player/<id>?season=&grouping=week`, `/projections/nba/player/<id>?...`, `/players/nba/<team>/depth_chart` | Player card: bio, game logs, career, depth chart |
 | `POST sleeper.com/graphql` `get_player_news`, `league_transactions_by_player` | Player card: latest news, transaction history |
 | `POST sleeper.com/graphql` `scores(...)` | Game times and home/away |
+| `POST sleeper.com/graphql` `plays(game_id)` / `plays(week)` | Play-by-play: the latest 20 of a game / every play of the week |
 | `POST sleeper.com/graphql` `roster_standings(...)` | Standings rank |
 | `POST sleeper.com/graphql` `me`, `matchup_legs`, `update_matchup_leg`, `roster_update_starters`, `roster_update_taxi`, `roster_update_reserve` | Logged-in lineup data, swaps, Lock-In, taxi and IR (see above) |
 | `POST sleeper.com/graphql` `submit_waiver_claim`, `league_create_transaction`, `league_transactions_filtered`, `update_waiver_claim`, `cancel_waiver_claim` | Waiver bids, free-agent adds and pending claims (see above) |
