@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Sleeper NBA",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Fills Sleeper's empty NBA Team and Matchup tabs (roster, schedule, projections, lineup swaps, Lock-In) and enables waiver bids and adds, plus a log of every API call it makes.",
   "permissions": [
     "storage"
