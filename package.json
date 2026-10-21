@@ -6,7 +6,11 @@
   "type": "module",
   "scripts": {
     "test": "TZ=America/New_York node --test 'test/unit/*.test.js'",
-    "test:e2e": "mkdir -p test-results && node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=tap --test-reporter-destination=test-results/e2e.tap 'test/e2e/*.test.js'"
+    "test:e2e": "mkdir -p test-results && node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=tap --test-reporter-destination=test-results/e2e.tap 'test/e2e/*.test.js'",
+    "build": "node scripts/build.js",
+    "build:firefox": "node scripts/build.js firefox",
+    "build:chrome": "node scripts/build.js chrome",
+    "package": "npm run build && npx web-ext build -s dist/firefox -a dist/packages -n sleeper-nba-firefox-{version}.zip --overwrite-dest && npx web-ext build -s dist/chrome -a dist/packages -n sleeper-nba-chrome-{version}.zip --overwrite-dest"
   },
   "devDependencies": {
     "playwright": "^1.64.1"
