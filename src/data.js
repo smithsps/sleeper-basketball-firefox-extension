@@ -82,7 +82,8 @@
 
   // One week of a league: matchups, schedule, projections, stats and lineups.
   // `full` adds what only the panel shows (research percentages and standings ranks).
-  async function loadWeek({ league, leagueId, rosters, week, full = false }) {
+  // `scoringSettings` overrides the league's (what-if scoring).
+  async function loadWeek({ league, leagueId, rosters, week, full = false, scoringSettings = league.scoring_settings || {} }) {
     const season = league.season;
     const seasonType = league.season_type || 'regular';
     const scoresQuery = `query scores {
@@ -107,13 +108,14 @@
         : [],
     ]);
     const games = scores?.scores || [];
-    const scoringSettings = league.scoring_settings || {};
     return {
       matchups: matchups || [],
       days: model.weekDays(games),
       gamesByTeam: model.gamesByTeam(games),
       games: games.map((g) => ({ start: g.start_time, status: g.status })),
       scores: games,
+      // Raw rows stay so what-if scoring can rescore them.
+      projRows: projections || [],
       statRows: stats || [],
       proj: model.pointsByGame(projections || [], scoringSettings, scoring.scoreStats),
       actual: model.pointsByGame(stats || [], scoringSettings, scoring.scoreStats),

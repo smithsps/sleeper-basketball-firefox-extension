@@ -3,6 +3,8 @@
 Chrome and Firefox extension (MV3) that fills Sleeper's empty NBA Team, Matchup and Scores tabs (`sleeper.com/leagues/<id>/team`, `/matchup` and `/scores`) with the layouts from the mobile app.
 It also adds score previews for NBA leagues in Sleeper's sidebar and a player card.
 It also turns on waiver bids and free-agent adds, which Sleeper's website blocks for NBA.
+An admin Scoring control (hidden unless turned on with `?snp-admin=1`) tries other scoring settings on those tabs, the player card (an adminFPTS game-log column) and adminFPTS and adminDelta columns on the Players tab, without changing the league.
+On NFL leagues it adds one button to your Team tab: Optimize lineup, which proposes the best starters and saves them once you confirm.
 It also logs every API call it makes, with status, timing, size and a JSON preview, to support probing the API.
 
 Unofficial and not affiliated with Sleeper.

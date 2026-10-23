@@ -17,3 +17,5 @@ playwright-report/
 
 # Build output
 dist/
+# Local analysis (league data, one-off scripts); see AGENTS.md
+analysis/

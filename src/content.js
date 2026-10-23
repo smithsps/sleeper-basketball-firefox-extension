@@ -4,7 +4,7 @@
 // On every page of an NBA league it also answers Sleeper's waiver and add
 // buttons (see page-hook.js) with a bid dialog.
 (() => {
-  const { createApi, createData, view, model, ui, waivers, card, matchup, scores, sidebar } = globalThis.SNP;
+  const { createApi, createData, view, model, scoring, ui, waivers, optimize, card, nfl, whatif, matchup, scores, sidebar } = globalThis.SNP;
   const ROUTE = /^\/leagues\/(\d+)(?:\/([^/]+))?/;
   const PANEL_PAGES = new Set(['team', 'matchup', 'scores']);
   // Sleeper only allows trading picks this many seasons ahead; it isn't exposed per league.
@@ -29,9 +29,42 @@
   const sidebarApi = createApi(() => {});
   const sidebarPreviews = sidebar.create(sidebarApi, createData(sidebarApi), matchup);
 
+  // Admin tools (what-if scoring: the Scoring control and the Players tab's
+  // adminFPTS and adminDelta columns) are hidden unless turned on with
+  // ?snp-admin=1 (off again with ?snp-admin=0). Sleeper's own navigation drops
+  // the query string, between tabs and between leagues alike, so the choice is
+  // saved for the whole browser the first time a URL carries it, and every
+  // page, league, reload and tab follows the saved choice from then on.
+  const ADMIN_PARAM = 'snp-admin';
+  const ADMIN_STORE = 'admin';
+  let admin = false;
+  let adminFromUrl = false; // a URL decided it, so the saved choice loading late mustn't undo that
+  function adminParam() {
+    const value = new URLSearchParams(location.search).get(ADMIN_PARAM);
+    return value == null ? null : !['0', 'off', 'false', 'no'].includes(value.toLowerCase());
+  }
+  function setAdmin(on) {
+    if (on === admin) return;
+    admin = on;
+    active?.setAdmin(on);
+  }
+  chrome.storage.local.get(ADMIN_STORE).then((saved) => {
+    if (!adminFromUrl) setAdmin(Boolean(saved[ADMIN_STORE]));
+  });
+  // Another tab turned it on or off.
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && ADMIN_STORE in changes) setAdmin(Boolean(changes[ADMIN_STORE].newValue));
+  });
+
   // Sleeper is a single-page app, so route changes don't reload content scripts.
   // Polling also re-attaches the panel if React re-renders the tab.
   function sync() {
+    const param = adminParam();
+    if (param != null && (param !== admin || !adminFromUrl)) {
+      adminFromUrl = true;
+      chrome.storage.local.set({ [ADMIN_STORE]: param });
+      setAdmin(param);
+    }
     const [, leagueId = null, page = null] = location.pathname.match(ROUTE) ?? [];
     // One session per league, kept across its tabs; the panel only shows on Team and Matchup.
     if (leagueId !== (active?.leagueId ?? null)) {
@@ -55,10 +88,17 @@
     const layerShadow = layer.attachShadow({ mode: 'open' });
     layerShadow.innerHTML = '<style></style><div class="root"></div>';
     const layerRoot = layerShadow.querySelector('.root');
+    // What-if scoring sits in the page's top-right corner, over dialogs too.
+    const corner = document.createElement('div');
+    corner.id = 'sleeper-nba-scoring';
+    const cornerShadow = corner.attachShadow({ mode: 'open' });
+    cornerShadow.innerHTML = '<style></style><div class="root"></div>';
+    const cornerRoot = cornerShadow.querySelector('.root');
     let styled = false;
     stylesheet.then((css) => {
       shadow.querySelector('style').textContent = css;
       layerShadow.querySelector('style').textContent = css;
+      cornerShadow.querySelector('style').textContent = css;
       styled = true;
       schedule();
     });
@@ -94,12 +134,22 @@
       notice: null, // { kind: 'error' | 'ok', text }
       lockConfirm: null, // player id whose Lock-In is awaiting confirmation
       ready: false, // first league + week load finished; the panel stays blank until then
+      // Sleeper turned down the page's login (see api.sessionExpired): show nothing but how to fix it,
+      // since the logged-out fallbacks (public rosters, no Lock-In picks) would show wrong numbers.
+      sessionExpired: false,
       claims: null, // the logged-in owner's pending waiver claims
       cards: {}, // player card data by player id, kept for the session
       // { kind: 'bid', playerId, status, bid, drops, errors, saving } | { kind: 'claims', errors, saving } | { kind: 'player', playerId, season }
+      // | { kind: 'optimize', plan, ack, errors, saving }; a player card can open over it (`back`).
       modal: null,
+      // What-if scoring: values that differ from the league's, whether they're in use, and the editor's state.
+      // `drafts` holds text being typed that isn't a number yet.
+      // `enabled` mirrors the admin switch (?snp-admin); off, nothing what-if shows or applies.
+      whatIf: { enabled: admin, overrides: {}, on: false, open: false, showAll: false, drafts: {} },
     };
     let destroyed = false;
+    let lastPage = page; // the league tab shown, panel or not
+    let nflSession = null; // set instead of the panel when the league is NFL
     let pendingCard = null; // player card asked for before the league finished loading
     let disabled = false;
     let frame = 0;
@@ -107,6 +157,7 @@
     const loader = createData(api);
 
     function attach() {
+      nflSession?.attach();
       if (destroyed || disabled) return;
       if (!state.onPanel) return detach();
       const placeholder = document.querySelector('.postdraft-panel .empty-panel-container');
@@ -145,9 +196,11 @@
         frame = 0;
         if (destroyed || !styled) return;
         state.now = Date.now();
+        state.sessionExpired = api.sessionExpired();
         renderLayer();
+        renderCorner();
         // Blank until everything for the first paint is in, like Sleeper's own tabs.
-        if (!(state.ready || state.error)) return;
+        if (!(state.ready || state.error || state.sessionExpired)) return;
         const scrollTop = root.querySelector('.body')?.scrollTop ?? 0;
         root.innerHTML = view.render(state, api.log);
         const body = root.querySelector('.body');
@@ -163,8 +216,11 @@
       // Scrolled areas keep their place across re-renders.
       const scrolls = [...layerRoot.querySelectorAll('.dialog-body, [data-scroll]')].map((el) => [el.dataset.scroll || 'dialog', el.scrollTop]);
       const focused = layerShadow.activeElement?.matches?.('[data-bid]');
-      const dialog = state.modal?.kind === 'player' ? card.render(state) : waivers.render(state);
-      layerRoot.innerHTML = `<div class="page-layer">${dialog}${showNotice ? ui.notice(state) : ''}</div>`;
+      const kind = state.modal?.kind;
+      const dialog = kind === 'player' ? card.render(state) : kind === 'optimize' ? optimize.render(state) : waivers.render(state);
+      // A player card opened from the optimize dialog sits on top of it.
+      const under = state.modal?.back?.kind === 'optimize' ? optimize.render(state, state.modal.back) : '';
+      layerRoot.innerHTML = `<div class="page-layer${ui.whatIfOn(state) ? ' whatif' : ''}">${under}${dialog}${showNotice ? ui.notice(state) : ''}</div>`;
       for (const [key, top] of scrolls) {
         const el = key === 'dialog' ? layerRoot.querySelector('.dialog-body') : layerRoot.querySelector(`[data-scroll="${key}"]`);
         if (el) el.scrollTop = top;
@@ -173,6 +229,94 @@
       if (input && (focused || state.modal.focus)) {
         input.focus();
         state.modal.focus = false;
+      }
+    }
+
+    // The what-if scoring control, wherever the extension shows fantasy points:
+    // the Team and Matchup tabs, its dialogs, and the Players tab's adminFPTS
+    // column. It's patched in place, so a field being typed in keeps its focus, caret and text.
+    function renderCorner() {
+      if (!(state.whatIf.enabled && state.ready && !state.error && (state.onPanel || state.modal || lastPage === 'players'))) {
+        state.whatIf.open = false;
+        return corner.remove();
+      }
+      if (!corner.isConnected) document.documentElement.appendChild(corner);
+      const next = document.createElement('div');
+      next.innerHTML = whatif.render(state);
+      morph(cornerRoot, next, cornerShadow.activeElement);
+    }
+
+    // Makes `from` match `to`, keeping nodes that are already right. Children
+    // pair up by position; an input keeps whatever is being typed into it.
+    function morph(from, to, active) {
+      const a = [...from.childNodes];
+      const b = [...to.childNodes];
+      b.forEach((node, i) => {
+        const old = a[i];
+        if (!old) return from.append(node);
+        if (old.nodeName !== node.nodeName) return old.replaceWith(node);
+        if (node.nodeType === Node.TEXT_NODE) {
+          if (old.data !== node.data) old.data = node.data;
+          return;
+        }
+        if (node.nodeType !== Node.ELEMENT_NODE) return;
+        for (const { name } of [...old.attributes]) if (!node.hasAttribute(name)) old.removeAttribute(name);
+        for (const { name, value } of [...node.attributes]) if (old.getAttribute(name) !== value) old.setAttribute(name, value);
+        if (old.tagName === 'INPUT') {
+          if (old !== active && old.value !== node.value) old.value = node.value;
+          return;
+        }
+        morph(old, node, active);
+      });
+      a.slice(b.length).forEach((node) => node.remove());
+    }
+
+    // Changes what-if scoring, rescores every loaded week and remembers it for this league.
+    function setWhatIf(changes) {
+      const w = Object.assign(state.whatIf, changes);
+      w.overrides = scoring.changedOnly(state.league?.scoring_settings || {}, w.overrides);
+      chrome.storage.local.set({ [`whatif:${leagueId}`]: { overrides: w.overrides, on: w.on } });
+      rescore();
+      sendAdminScoring();
+      schedule();
+    }
+
+    // The Players tab's adminFPTS column (page-hook.js) always shows the what-if
+    // values, switched on or not. Each change is announced; page-hook then asks
+    // for each player's difference from the league's scoring (adminDeltas).
+    function sendAdminScoring() {
+      document.dispatchEvent(new CustomEvent('snp:admin-scoring', {
+        detail: JSON.stringify({ leagueId, enabled: state.whatIf.enabled, changed: Object.keys(state.whatIf.overrides).length > 0 }),
+      }));
+    }
+    // For each player: points the changed settings add to Sleeper's FPTS, and
+    // for the players in view, how many places that moves them (with its color).
+    function adminDeltas(e) {
+      const league = state.league?.scoring_settings || {};
+      // Scoring with just the differences gives what they add on top of Sleeper's FPTS.
+      const delta = Object.fromEntries(Object.entries(state.whatIf.overrides).map(([key, value]) => [key, value - (league[key] ?? 0)]));
+      const { stats, view, base } = JSON.parse(e.detail);
+      const points = Object.fromEntries(Object.entries(stats).map(([id, s]) => [id, s ? scoring.scoreStats(delta, s) : 0]));
+      const ids = view.filter((id) => stats[id]?.[base] != null);
+      // Ranked per game, as the table shows every stat (a season's stats are totals).
+      const games = (id) => (stats[id].gp > 0 ? stats[id].gp : 1);
+      const was = model.ranks(ids, (id) => stats[id][base] / games(id));
+      const now = model.ranks(ids, (id) => (stats[id][base] + points[id]) / games(id));
+      const shifts = Object.fromEntries(ids.map((id) => [id, was[id] - now[id]]));
+      const biggest = Math.max(0, ...Object.values(shifts).map(Math.abs));
+      const tints = Object.fromEntries(ids.map((id) => [id, model.shiftTint(shifts[id], biggest)]));
+      // Both places too, shown under the badge so a shift can be checked at a glance.
+      const places = Object.fromEntries(ids.map((id) => [id, [was[id], now[id]]]));
+      document.dispatchEvent(new CustomEvent('snp:admin-scores', { detail: JSON.stringify({ points, shifts, tints, places }) }));
+    }
+    document.addEventListener('snp:admin-score-request', adminDeltas);
+
+    // Every loaded week's fantasy points, with whichever scoring is in use.
+    function rescore() {
+      const settings = ui.scoringOf(state);
+      for (const week of Object.values(state.weeks)) {
+        week.proj = model.pointsByGame(week.projRows, settings, scoring.scoreStats);
+        week.actual = model.pointsByGame(week.statRows, settings, scoring.scoreStats);
       }
     }
 
@@ -187,14 +331,17 @@
       state.error = null;
       const league = await api.get(`/v1/league/${leagueId}`);
       if (league.sport !== 'nba') {
-        console.info('[sleeper-nba-panel] not an NBA league, staying hidden');
         disabled = true;
         teardown();
+        // NFL leagues get only Optimize lineup on Sleeper's own Team tab.
+        if (league.sport === 'nfl' && !destroyed) nflSession = mountNfl(leagueId, lastPage);
+        else console.info('[sleeper-nba-panel] not an NBA league, staying hidden');
         return;
       }
       // Tells page-hook.js to route this league's waiver and add buttons here.
       document.documentElement.dataset.snpNbaLeague = leagueId;
       const rosterKey = `roster:${leagueId}`;
+      const whatIfKey = `whatif:${leagueId}`;
       const [nbaState, users, rosters, bracket, traded, drafts, players, prefs, me] = await Promise.all([
         api.get('/v1/state/nba'),
         api.get(`/v1/league/${leagueId}/users`),
@@ -203,10 +350,17 @@
         api.get(`/v1/league/${leagueId}/traded_picks`),
         api.get(`/v1/league/${leagueId}/drafts`),
         loader.loadPlayers(force),
-        chrome.storage.local.get(rosterKey),
+        chrome.storage.local.get([rosterKey, whatIfKey]),
         loader.loadMe(),
       ]);
       const savedRoster = rosters.find((r) => r.roster_id === prefs[rosterKey]);
+      // Saved what-if values that now match the league's (it changed its scoring) drop out.
+      const savedWhatIf = prefs[whatIfKey] || {};
+      Object.assign(state.whatIf, {
+        overrides: scoring.changedOnly(league.scoring_settings || {}, savedWhatIf.overrides || {}),
+        on: Boolean(savedWhatIf.on),
+        drafts: {},
+      });
       const myRoster = me && rosters.find((r) => r.owner_id === me || (r.co_owners || []).includes(me));
       Object.assign(state, {
         league,
@@ -228,6 +382,7 @@
       await loadWeek(state.week);
       if (state.currentWeek !== state.week) loadWeek(state.currentWeek).catch(fail);
       state.ready = true;
+      sendAdminScoring();
       schedule();
       loadClaims();
       if (pendingCard) openCard(pendingCard);
@@ -266,7 +421,9 @@
     async function loadWeek(week) {
       schedule();
       if (state.weeks[week]) return;
-      state.weeks[week] = await loader.loadWeek({ league: state.league, leagueId, rosters: state.rosters, week, full: true });
+      state.weeks[week] = await loader.loadWeek({
+        league: state.league, leagueId, rosters: state.rosters, week, full: true, scoringSettings: ui.scoringOf(state),
+      });
       schedule();
     }
 
@@ -337,21 +494,22 @@
     }
 
     // Player card: each part loads on its own and renders as it arrives.
-    function openCard(playerId) {
+    // `back` is a dialog the card opens over, shown again when the card closes.
+    function openCard(playerId, back = null) {
       if (!state.ready) {
         // Clicked from the Players or Trend tab before the league loaded: open once it has.
         pendingCard = playerId;
         return;
       }
-      state.modal = { kind: 'player', playerId, season: null };
+      state.modal = { kind: 'player', playerId, season: null, back };
       state.notice = null;
       schedule();
       if (state.cards[playerId]) return;
       const c = (state.cards[playerId] = { logs: {} });
       const player = state.players[playerId] || {};
       const current = Number(state.league.season);
-      const back = Math.min(Math.max(Number(player.years_exp) || 0, 0), CAREER_SEASONS - 1);
-      const years = Array.from({ length: back + 1 }, (_, i) => current - i);
+      const seasonsBack = Math.min(Math.max(Number(player.years_exp) || 0, 0), CAREER_SEASONS - 1);
+      const years = Array.from({ length: seasonsBack + 1 }, (_, i) => current - i);
       c.careerYears = years.length;
       const id = encodeURIComponent(playerId);
       const part = (promise, apply, fallback) => promise
@@ -415,7 +573,7 @@
 
     function closeModal() {
       if (state.modal?.saving) return;
-      state.modal = null;
+      state.modal = state.modal?.back ?? null;
       schedule();
     }
 
@@ -431,7 +589,7 @@
         if (state.modal === m) state.modal = m.kind === 'claims' ? { ...m, saving: false } : null;
         flash(okText);
       } catch (err) {
-        console.error('[sleeper-nba-panel] waiver save failed', err);
+        console.error('[sleeper-nba-panel] save failed', err);
         m.errors = [String(err.message || err)];
       } finally {
         m.saving = false;
@@ -588,6 +746,46 @@
       );
     }
 
+    // Proposes the best lineup for the shown week; nothing saves until it's applied.
+    function openOptimize() {
+      const lineup = ui.lineup(state);
+      if (state.saving || !lineup?.editable || !lineup.week || ui.whatIfOn(state)) return;
+      state.swap = null;
+      state.lockConfirm = null;
+      state.notice = null;
+      state.modal = { kind: 'optimize', plan: model.bestLineup(lineup, Date.now()), ack: false, errors: [], saving: false };
+      schedule();
+    }
+
+    // Saves the proposed lineup in one write. Games can tip off while the
+    // dialog is open, so the plan is worked out again first; if it changed,
+    // the dialog shows the new one instead of saving something unseen.
+    function applyOptimize() {
+      const m = state.modal;
+      const lineup = ui.lineup(state);
+      if (m?.kind !== 'optimize' || m.saving || !lineup?.editable) return;
+      // The plan was made with the league's scoring; what-if numbers would change it.
+      if (ui.whatIfOn(state)) {
+        m.errors = ['Switch what-if scoring off to apply. Optimize picks the lineup with your league\'s scoring.'];
+        return schedule();
+      }
+      const plan = model.bestLineup(lineup, Date.now());
+      if (JSON.stringify(plan.starters) !== JSON.stringify(m.plan.starters) ||
+        JSON.stringify(plan.changes) !== JSON.stringify(m.plan.changes)) {
+        m.plan = plan;
+        m.ack = false;
+        m.errors = ['Games have tipped off since this opened. Review the updated changes.'];
+        return schedule();
+      }
+      // Giving up a score that beat its projection takes the tick box.
+      if (plan.changes.some((c) => c.goodScore) && !m.ack) return;
+      // Names a few moves; past that, just the count, so the notice stays one line.
+      const moved = plan.changes.length > 3 ? `${plan.changes.length} lineup changes` : plan.changes
+        .map(({ id, to }) => `${ui.shortName(state.players[id] || { name: `Player #${id}` })} to ${to === 'BN' ? 'bench' : to}`)
+        .join(', ');
+      return modalSave(() => saveStarters(plan.starters), `Saved: ${moved}`);
+    }
+
     function pickSpot(ref) {
       if (state.saving) return;
       const lineup = ui.lineup(state);
@@ -655,6 +853,8 @@
         schedule();
       }
       if (action === 'claims') openClaims();
+      if (action === 'optimize') openOptimize();
+      if (action === 'whatif-off') setWhatIf({ on: false });
     });
     root.addEventListener('change', (e) => {
       if (e.target.dataset.action !== 'roster') return;
@@ -708,6 +908,8 @@
       }
       const confirmed = e.target.closest('[data-claim-cancel-confirm]');
       if (confirmed) return cancelClaim(confirmed.dataset.claimCancelConfirm);
+      const player = e.target.closest('[data-player]');
+      if (player && state.modal?.kind === 'optimize' && !state.modal.saving) return openCard(player.dataset.player, state.modal);
       const season = e.target.closest('[data-card-season]');
       if (season && state.modal?.kind === 'player') {
         const c = state.cards[state.modal.playerId];
@@ -721,6 +923,13 @@
       const action = e.target.closest('[data-action]')?.dataset.action;
       if (action === 'close-modal') closeModal();
       if (action === 'submit-claim') submitClaim();
+      if (action === 'apply-lineup') applyOptimize();
+      if (action === 'whatif-off') setWhatIf({ on: false });
+    });
+    layerRoot.addEventListener('change', (e) => {
+      if (!e.target.matches('[data-op-ack]') || state.modal?.kind !== 'optimize') return;
+      state.modal.ack = e.target.checked;
+      schedule();
     });
     layerRoot.addEventListener('input', (e) => {
       // Kept without a re-render so typing never loses focus.
@@ -732,6 +941,54 @@
     layerRoot.addEventListener('error', (e) => {
       if (e.target.tagName === 'IMG') e.target.classList.add('missing');
     }, true);
+
+    cornerRoot.addEventListener('click', (e) => {
+      const w = state.whatIf;
+      const reset = e.target.closest('[data-wi-reset]');
+      if (reset) {
+        const { [reset.dataset.wiReset]: _, ...overrides } = w.overrides;
+        delete w.drafts[reset.dataset.wiReset];
+        return setWhatIf({ overrides });
+      }
+      const action = e.target.closest('[data-wi]')?.dataset.wi;
+      if (action === 'toggle-open') w.open = !w.open;
+      if (action === 'close') w.open = false;
+      if (action === 'show-all') w.showAll = !w.showAll;
+      if (action === 'league') return setWhatIf({ on: false });
+      if (action === 'whatif') return setWhatIf({ on: true });
+      if (action === 'reset') return setWhatIf({ overrides: {}, drafts: {}, on: false });
+      schedule();
+    });
+    // Values apply as they're typed, and switch the page to what-if scoring.
+    cornerRoot.addEventListener('input', (e) => {
+      const key = e.target.dataset.wiKey;
+      if (!key) return;
+      const w = state.whatIf;
+      w.drafts[key] = e.target.value;
+      // A stat the league doesn't score stays listed while it's edited, even once it's back to 0.
+      if (!state.league.scoring_settings?.[key]) w.showAll = true;
+      const value = whatif.parse(e.target.value);
+      if (value == null) return schedule();
+      setWhatIf({ overrides: { ...w.overrides, [key]: value }, on: true });
+    });
+    // Leaving a field (or Enter) settles it: the value as a number, or back to what it was.
+    function settle(input) {
+      const key = input.dataset.wiKey;
+      if (!key || !(key in state.whatIf.drafts)) return;
+      delete state.whatIf.drafts[key];
+      schedule();
+    }
+    cornerRoot.addEventListener('change', (e) => settle(e.target));
+    cornerRoot.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && e.target.dataset.wiKey) settle(e.target);
+    });
+    // Like a tooltip, the editor closes on a click anywhere else.
+    function onOutsideClick(e) {
+      if (!state.whatIf.open || e.composedPath().includes(corner)) return;
+      state.whatIf.open = false;
+      schedule();
+    }
+    document.addEventListener('click', onOutsideClick, true);
     function onPlayerAction(e) {
       try {
         openClaim(JSON.parse(e.detail));
@@ -750,6 +1007,10 @@
     document.addEventListener('snp:player-card', onPlayerCard);
 
     function onKey(e) {
+      if (e.key === 'Escape' && state.whatIf.open) {
+        state.whatIf.open = false;
+        return schedule();
+      }
       if (e.key === 'Escape' && state.modal) return closeModal();
       if (e.key === 'Escape' && (state.swap || state.lockConfirm)) {
         state.swap = null;
@@ -825,6 +1086,9 @@
 
     // Same league, other tab (Team <-> Matchup): keep the data, swap the view.
     function show(next) {
+      if (next !== lastPage) schedule(); // the Scoring control follows the tab
+      lastPage = next;
+      nflSession?.show(next);
       const onPanel = PANEL_PAGES.has(next);
       if (onPanel === state.onPanel && (!onPanel || next === state.page)) return;
       state.onPanel = onPanel;
@@ -839,22 +1103,202 @@
       clearInterval(clock);
       clearInterval(live);
       document.removeEventListener('keydown', onKey);
+      document.removeEventListener('click', onOutsideClick, true);
+      document.removeEventListener('snp:admin-score-request', adminDeltas);
       document.removeEventListener('snp:player-action', onPlayerAction);
       document.removeEventListener('snp:player-card', onPlayerCard);
       if (document.documentElement.dataset.snpNbaLeague === leagueId) delete document.documentElement.dataset.snpNbaLeague;
       cancelAnimationFrame(frame);
       host.remove();
       layer.remove();
+      corner.remove();
       restorePlaceholder();
     }
 
     function destroy() {
       destroyed = true;
+      nflSession?.destroy();
       teardown();
     }
 
     loadLeague().catch(fail);
-    return { leagueId, attach, show, destroy };
+    // The admin switch flipped: show or hide what-if scoring, and rescore either way.
+    function setAdminTools(on) {
+      state.whatIf.enabled = on;
+      if (!on) state.whatIf.open = false;
+      rescore();
+      if (state.ready) sendAdminScoring();
+      schedule();
+    }
+
+    return { leagueId, attach, show, destroy, setAdmin: setAdminTools };
+  }
+
+  // NFL leagues: Sleeper's web app runs the Team tab itself. This adds an
+  // OPTIMIZE button beside its WAIVER and TRADE buttons, a confirm dialog, and
+  // saves through Sleeper's own actions (page-hook.js reads and writes the lineup).
+  function mountNfl(leagueId, page) {
+    const BUTTON_ID = 'snp-optimize';
+    const layer = document.createElement('div');
+    layer.id = 'sleeper-nfl-dialog';
+    const shadow = layer.attachShadow({ mode: 'open' });
+    shadow.innerHTML = '<style></style><div class="root"></div>';
+    const root = shadow.querySelector('.root');
+    const state = { page, modal: null, notice: null };
+    let destroyed = false;
+    let styled = false;
+    stylesheet.then((css) => {
+      shadow.querySelector('style').textContent = css;
+      styled = true;
+      render();
+    });
+
+    // The Team tab's lineup from page-hook.js, which answers before dispatchEvent returns.
+    function lineup(full) {
+      let data = null;
+      const take = (e) => {
+        data = JSON.parse(e.detail);
+      };
+      document.addEventListener('snp:nfl-lineup', take);
+      document.dispatchEvent(new CustomEvent('snp:nfl-lineup-request', { detail: JSON.stringify({ leagueId, full }) }));
+      document.removeEventListener('snp:nfl-lineup', take);
+      return data;
+    }
+
+    // Sleeper's projections, scored with the league's settings exactly as its Team tab shows them.
+    function plan(l) {
+      const proj = Object.fromEntries(Object.entries(l.projections).map(([id, p]) => [id, scoring.scoreStats(l.scoring || {}, p.stats)]));
+      return model.bestNflLineup({ ...l, proj });
+    }
+
+    function render() {
+      if (destroyed || !styled) return;
+      if (!state.modal && !state.notice) return layer.remove();
+      if (!layer.isConnected) document.documentElement.appendChild(layer);
+      root.innerHTML = `<div class="page-layer">${nfl.render(state)}${ui.notice(state)}</div>`;
+    }
+
+    function flash(text) {
+      const shown = { kind: 'ok', text };
+      state.notice = shown;
+      setTimeout(() => {
+        if (state.notice !== shown) return;
+        state.notice = null;
+        render();
+      }, NOTICE_MS);
+    }
+
+    function open() {
+      const l = lineup(true);
+      if (!l?.editable) return;
+      state.modal = { lineup: l, plan: plan(l), errors: [], saving: false };
+      state.notice = null;
+      render();
+    }
+
+    function close() {
+      if (state.modal?.saving) return;
+      state.modal = null;
+      render();
+    }
+
+    // Works the plan out again first: if a game kicked off while the dialog
+    // was open, it shows the new plan instead of saving one you haven't seen.
+    function apply() {
+      const m = state.modal;
+      if (!m || m.saving) return;
+      const l = lineup(true);
+      const fresh = l?.editable ? plan(l) : null;
+      if (!fresh) {
+        m.errors = ['The Team tab changed; open Optimize again.'];
+        return render();
+      }
+      if (JSON.stringify(fresh.starters) !== JSON.stringify(m.plan.starters) ||
+        JSON.stringify(fresh.changes) !== JSON.stringify(m.plan.changes)) {
+        Object.assign(m, { lineup: l, plan: fresh, errors: ['Games have kicked off since this opened. Review the updated changes.'] });
+        return render();
+      }
+      const name = (id) => l.players[id]?.name || `Player #${id}`;
+      const moved = fresh.changes.length > 3 ? `${fresh.changes.length} lineup changes`
+        : fresh.changes.map(({ id, to }) => `${name(id)} to ${to === 'BN' ? 'bench' : to}`).join(', ');
+      m.saving = true;
+      m.errors = [];
+      render();
+      const done = (e) => {
+        document.removeEventListener('snp:nfl-lineup-saved', done);
+        if (destroyed) return;
+        const result = JSON.parse(e.detail);
+        if (result.ok) {
+          state.modal = null;
+          flash(`Saved: ${moved}`);
+        } else {
+          m.saving = false;
+          m.errors = [result.error];
+        }
+        render();
+      };
+      document.addEventListener('snp:nfl-lineup-saved', done);
+      document.dispatchEvent(new CustomEvent('snp:nfl-lineup-save', {
+        detail: JSON.stringify({ leagueId, rosterId: l.rosterId, round: l.round, starters: fresh.starters }),
+      }));
+    }
+
+    // Sleeper re-renders its header now and then, so this runs on every page change.
+    function attach() {
+      if (destroyed) return;
+      const actions = state.page === 'team' ? document.querySelector('.user-tab-menu .actions') : null;
+      const button = document.getElementById(BUTTON_ID);
+      if (!actions || !lineup(false)?.editable) return button?.remove();
+      if (button && actions.firstElementChild === button) return;
+      const el = button || Object.assign(document.createElement('div'), {
+        id: BUTTON_ID,
+        className: 'btn-container space',
+        innerHTML: nfl.BUTTON,
+        title: 'Propose the best starting lineup for this week',
+        tabIndex: 0,
+      });
+      el.setAttribute('role', 'button');
+      el.setAttribute('aria-label', 'Optimize lineup');
+      actions.prepend(el);
+    }
+
+    function show(next) {
+      state.page = next;
+      if (next !== 'team') close();
+      attach();
+    }
+
+    function onClick(e) {
+      if (e.target instanceof Element && e.target.closest(`#${BUTTON_ID}`)) open();
+    }
+    function onKey(e) {
+      if (e.key === 'Escape' && state.modal) return close();
+      if ((e.key === 'Enter' || e.key === ' ') && e.target instanceof Element && e.target.id === BUTTON_ID) {
+        e.preventDefault();
+        open();
+      }
+    }
+    document.addEventListener('click', onClick);
+    document.addEventListener('keydown', onKey);
+    root.addEventListener('click', (e) => {
+      const action = e.target.closest('[data-action]')?.dataset.action;
+      if (action === 'close-modal') close();
+      if (action === 'apply-lineup') apply();
+    });
+    root.addEventListener('error', (e) => {
+      if (e.target.tagName === 'IMG') e.target.classList.add('missing');
+    }, true);
+
+    function destroy() {
+      destroyed = true;
+      document.removeEventListener('click', onClick);
+      document.removeEventListener('keydown', onKey);
+      document.getElementById(BUTTON_ID)?.remove();
+      layer.remove();
+    }
+
+    attach();
+    return { attach, show, destroy };
   }
 
   // The season ends when the league's playoff bracket does. Round count comes

@@ -12,22 +12,25 @@ User-facing docs: `README.md` (install, privacy) and `docs/DETAILS.md` (features
 - Browser testing is headless only (Playwright). The user's real Chrome is for reading live data with their session, not for testing.
 - Writes against the live league (bids, lineup, taxi, IR) only with the user's go-ahead; tell them exactly what is left to undo.
 - npm registry is `registry.npmjs.org` (see `.npmrc`); no work registries.
+- One-off analysis (league data pulls, scoring studies, scripts and their outputs) goes in `analysis/<topic>/`, which is gitignored. The repo is public and the data names league members, so none of it is ever committed, quoted in docs or used in tests. `analysis/scoring-2026/` holds the 2025-season scoring study: run its Python scripts from that folder with `python3 -I`.
 
 ## Layout
 
-- `manifest.json`: content scripts run at `document_start` on `sleeper.com`, in this order: `scoring`, `model`, `api`, `data`, `ui`, `view`, `matchup`, `scores`, `waivers`, `card`, `sidebar`, `content`. `page-hook.js` runs separately in the page's MAIN world.
-- `src/model.js`: pure rules (schedule, Lock-In, lineup/taxi/IR moves, waivers, win probability). Unit tested.
-- `src/ui.js`, `src/view.js`, `src/matchup.js`, `src/scores.js`, `src/waivers.js`, `src/card.js` (player card): pure state -> HTML render functions.
+- `manifest.json`: content scripts run at `document_start` on `sleeper.com`, in this order: `scoring`, `model`, `api`, `data`, `ui`, `view`, `matchup`, `scores`, `waivers`, `optimize`, `nfl`, `card`, `whatif`, `sidebar`, `content`. `page-hook.js` runs separately in the page's MAIN world.
+- `src/model.js`: pure rules (schedule, Lock-In, lineup/taxi/IR moves, best lineup for NBA and NFL via one Hungarian-algorithm solver, waivers, win probability). Unit tested.
+- `src/ui.js`, `src/view.js`, `src/matchup.js`, `src/scores.js`, `src/waivers.js`, `src/optimize.js` (NBA Optimize lineup dialog), `src/nfl.js` (NFL Optimize lineup dialog and button), `src/card.js` (player card), `src/whatif.js` (the corner What-if scoring control): pure state -> HTML render functions.
 - `src/data.js`: loads players, rosters, lineups and a week's data; shared by the panel and the sidebar previews.
 - `src/sidebar.js`: score previews for NBA leagues in Sleeper's sidebar (markup from Sleeper's own NFL items; `src/sidebar.css` hides the format line they replace).
-- `src/content.js`: one session per league (survives tab switches), data loading, saves, events. Renders into a shadow root that replaces Sleeper's "not yet available" placeholder; dialogs render in a separate page-level host.
-- `src/page-hook.js`: reads React props off Sleeper's W/ADD buttons and Players/Trend player rows, labels sidebar leagues (`data-snp-league`, `data-snp-sport`) for the previews, and hands clicks to the extension via `snp:player-action` / `snp:player-card` DOM events, only for leagues the extension marked NBA (`html[data-snp-nba-league]`).
+- `src/content.js`: one session per league (survives tab switches), data loading, saves, events. NFL leagues get `mountNfl` instead: the OPTIMIZE button and its dialog, nothing else. Renders into a shadow root that replaces Sleeper's "not yet available" placeholder; dialogs render in a separate page-level host.
+- `src/page-hook.js`: reads React props off Sleeper's W/ADD buttons and Players/Trend player rows, labels sidebar leagues (`data-snp-league`, `data-snp-sport`) for the previews, and hands clicks to the extension via `snp:player-action` / `snp:player-card` DOM events, only for leagues the extension marked NBA (`html[data-snp-nba-league]`). For NFL it reads the Team tab's lineup from Sleeper's Team component (`snp:nfl-lineup-request`) and saves through that component's own `updateMatchupLeg` (`snp:nfl-lineup-save`). On the NBA Players tab it adds the `adminFPTS` and `adminDelta` columns to Sleeper's table component, asking the extension for the what-if scores and rank shifts (`snp:admin-score-request`).
 - `src/panel.css`: all styles, inlined into each shadow root.
 - `test/unit` (node:test, `TZ=America/New_York`), `test/e2e/panel.test.js` (stand-in Sleeper pages, live public API, mocked authenticated GraphQL). Each e2e run also writes `test-results/e2e.tap`; read it when a run fails intermittently.
 
 ## Conventions and gotchas
 
 - Read league rules from the API (`league.settings`, `scoring_settings`); never hardcode them.
+- What-if scoring and the adminFPTS/adminDelta columns are admin tools, off unless `?snp-admin=1` was seen (saved in `chrome.storage.local`, key `admin`).
+- Score fantasy points with `ui.scoringOf(state)`, never `league.scoring_settings` directly, so what-if scoring reaches them. Sleeper's own totals use league scoring; set them aside when `ui.whatIfOn(state)`.
 - Port behavior from Sleeper's own web bundle when it exists (mutation shapes, eligibility, dialog wording) instead of inventing it.
 - Logged-in calls send `localStorage.token` as `Authorization`; never log or render it.
 - Public `/v1/league/<id>/rosters` is CDN-cached for minutes; when logged in read rosters via GraphQL `league_rosters`.

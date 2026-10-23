@@ -57,6 +57,32 @@
       : `<span class="slot ${esc(cls)}"${style}>${esc(slot)}</span>`;
   }
 
+  // A player's next game this week, e.g. "Thu @ MIA 7:30pm".
+  function nextGame(days) {
+    const d = days.find((x) => x.game && x.game.status !== 'complete');
+    if (!d) return days.some((x) => x.game) ? 'No games left this week' : 'No games this week';
+    const time = d.game.status === 'in_game' ? 'Live' : d.game.start ? gameTime(d.game.start) : '';
+    return `${weekday(d.date)} ${d.home ? 'vs' : '@'} ${d.opponent}${time ? ` ${time}` : ''}`;
+  }
+
+  // A dialog over the page; the backdrop and ✕ close it. `extra` sits beside the title.
+  function dialog(title, description, body, extra = '') {
+    return `<div class="modal">
+      <div class="backdrop" data-action="close-modal"></div>
+      <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
+        <header class="dialog-head">
+          <div><h2 id="dialog-title">${esc(title)}${extra}</h2>${description ? `<div class="sub">${esc(description)}</div>` : ''}</div>
+          <button class="icon close" data-action="close-modal" aria-label="Close">✕</button>
+        </header>
+        ${body}
+      </div>
+    </div>`;
+  }
+
+  function dialogErrors(list) {
+    return list?.length ? `<div class="dialog-errors" role="alert">${list.map((e) => `<p>${esc(e)}</p>`).join('')}</div>` : '';
+  }
+
   function weekNav(s, week) {
     const range = week?.days.length ? dateRange(week.days[0], week.days.at(-1)) : '';
     return `<div class="week-nav">
@@ -106,8 +132,8 @@
       locks: leg?.starters_games || {},
       mine,
       editable,
-      // Locks only exist on an in-season matchup leg.
-      lockable: mine && current && inSeason && Boolean(leg),
+      // Locks only exist on an in-season matchup leg. A lock is real points, so not under what-if scoring.
+      lockable: mine && current && inSeason && Boolean(leg) && !whatIfOn(s),
       // Taxi belongs to the roster, not a week, so it's edited from the current week.
       taxiEditable: editable && (settings.taxi_slots || 0) > 0 && s.week === s.currentWeek,
       taxiOpen: globalThis.SNP.model.taxiOpen(settings, s.seasonType, s.currentWeek, weekStarted(s)),
@@ -149,9 +175,44 @@
     return `${names} players can move to IR.`;
   }
 
+  // What-if scoring (see whatif.js) applies once the admin tools are enabled
+  // (?snp-admin=1), a value differs from the league's, and it's switched on.
+  const whatIfOn = (s) => Boolean(s.whatIf?.enabled && s.whatIf.on && Object.keys(s.whatIf.overrides || {}).length);
+
+  // The scoring settings every fantasy number on screen uses.
+  function scoringOf(s) {
+    const league = s.league?.scoring_settings || {};
+    return whatIfOn(s) ? globalThis.SNP.scoring.withOverrides(league, s.whatIf.overrides) : league;
+  }
+
+  // The what-if values whenever the admin tools are on, switched on or not
+  // (the Players tab's and game log's adminFPTS); null when they're off.
+  function adminScoring(s) {
+    if (!s.whatIf?.enabled) return null;
+    return globalThis.SNP.scoring.withOverrides(s.league?.scoring_settings || {}, s.whatIf.overrides || {});
+  }
+
+  // The what-if changes in a few words, e.g. "Points Scored 0.5 → 1, Blocks 2 → 3".
+  function whatIfChanges(s, max = 3) {
+    const league = s.league?.scoring_settings || {};
+    const labels = Object.fromEntries(globalThis.SNP.scoring.settingsList(league));
+    const list = Object.entries(s.whatIf?.overrides || {}).map(([key, value]) => `${labels[key] || key} ${league[key] ?? 0} → ${value}`);
+    return list.length > max ? `${list.slice(0, max).join(', ')} and ${list.length - max} more` : list.join(', ');
+  }
+
+  // Shown over the Team and Matchup tabs and the player card while what-if scoring is on.
+  function whatIfBanner(s) {
+    if (!whatIfOn(s)) return '';
+    return `<div class="whatif-banner" role="status">
+      <span class="tag">What-if scoring</span>
+      <span class="what">${esc(whatIfChanges(s))}. Fantasy points here aren't your league's; Lock-In and Optimize are off.</span>
+      <button data-action="whatif-off">Use league scoring</button>
+    </div>`;
+  }
+
   return {
-    reserveRule,
+    reserveRule, whatIfOn, scoringOf, adminScoring, whatIfChanges, whatIfBanner,
     esc, f2, CDN, headshot, teamLogo, teamName, avatar, record, shortName, injuryTag, positions,
-    gameTime, weekday, slotBadge, weekNav, notice, lineup, taxiRule, owns,
+    gameTime, weekday, nextGame, dialog, dialogErrors, slotBadge, weekNav, notice, lineup, taxiRule, owns,
   };
 })();

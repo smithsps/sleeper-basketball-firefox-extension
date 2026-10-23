@@ -2,8 +2,8 @@
 // slot, with Lock-In status and the lock control for the logged-in owner.
 (globalThis.SNP ||= {}).matchup = (() => {
   const { playerDays, lockState, lockInDefault, projectedTotal, winProbability } = globalThis.SNP.model;
-  const { esc, f2, headshot, teamLogo, teamName, avatar, record, shortName, injuryTag, positions, gameTime, weekday, slotBadge, weekNav, lineup } =
-    globalThis.SNP.ui;
+  const { esc, f2, headshot, teamLogo, teamName, avatar, record, shortName, injuryTag, positions, gameTime, weekday, slotBadge, weekNav, lineup,
+    whatIfOn } = globalThis.SNP.ui;
 
   function render(s) {
     if (s.error) return `<p class="msg error">${esc(s.error)}</p>`;
@@ -73,15 +73,18 @@
     }
     const all = Object.values(states);
     const counted = all.reduce((sum, st) => sum + (st.points ?? 0), 0);
-    const points = l.leg
-      ? l.leg.custom_points ?? l.leg.points ?? counted
+    const projected = all.reduce((sum, st) => sum + (st.counted ? st.points : lockInDefault(st.days) ?? 0), 0);
+    // Sleeper's totals use the league's scoring; what-if scoring keeps the ones added up here.
+    const server = whatIfOn(s) ? null : l.leg ?? l.matchup;
+    const points = !server ? counted
+      : l.leg ? l.leg.custom_points ?? l.leg.points ?? counted
       : l.matchup?.custom_points ?? l.matchup?.points ?? counted;
     return {
       l,
       states,
       points: points ?? 0,
-      anyPoints: all.some((st) => st.counted) || Boolean(l.leg?.points ?? l.matchup?.points),
-      proj: projectedTotal(l.leg?.proj_points, Object.entries(states).map(([id, st]) => ({ days: st.days, lock: l.locks[id] })), s.now),
+      anyPoints: all.some((st) => st.counted) || Boolean(server && (l.leg?.points ?? l.matchup?.points)),
+      proj: server ? projectedTotal(l.leg?.proj_points, Object.entries(states).map(([id, st]) => ({ days: st.days, lock: l.locks[id] })), s.now) : projected,
       yetToPlay: all.filter((st) => st.yetToPlay).length,
     };
   }
